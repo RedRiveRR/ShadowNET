@@ -161,19 +161,21 @@ export const fetchOTX = async () => {
   try {
     const key = import.meta.env.VITE_OTX_API_KEY;
     if (!key) return;
-    const response = await fetch('https://otx.alienvault.com/api/v1/pulses/subscribed?limit=3', {
+    const response = await fetch('https://otx.alienvault.com/api/v1/pulses/subscribed?limit=5', {
       headers: { 'X-OTX-API-KEY': key }
     });
     if (response.ok) {
       const data = await response.json();
       if (data.results && data.results.length > 0) {
-        const pulse = data.results[0];
-        useMetricsStore.getState().addSecurityAlert({
-          id: `otx-${pulse.id}-${Date.now()}`,
-          type: 'OTX',
-          severity: 'CRITICAL',
-          title: `[OTX] ${pulse.name.slice(0, 40)}`,
-          time: Date.now()
+        data.results.slice(0, 3).forEach((pulse: any) => {
+          useMetricsStore.getState().addSecurityAlert({
+            id: `otx-${pulse.id}-${Date.now()}-${Math.random()}`,
+            type: 'OTX',
+            severity: 'CRITICAL',
+            title: `[OTX] ${pulse.name.slice(0, 50)}`,
+            time: Date.now(),
+            url: `https://otx.alienvault.com/pulse/${pulse.id}`
+          });
         });
       }
     }
@@ -185,22 +187,21 @@ export const fetchRadar = async () => {
   try {
     const cfToken = import.meta.env.VITE_CLOUDFLARE_API_TOKEN;
     if (!cfToken) return;
-    const response = await fetch('https://api.cloudflare.com/client/v4/radar/bgp/top/ases?limit=1&dateRange=1d', {
+    const response = await fetch('https://api.cloudflare.com/client/v4/radar/bgp/top/ases?limit=3&dateRange=1d', {
       headers: { 'Authorization': `Bearer ${cfToken}`, 'Content-Type': 'application/json' }
     });
     if (response.ok) {
       const data = await response.json();
       if (data.result && data.result.top_0 && data.result.top_0.length > 0) {
         const topASN = data.result.top_0[0];
-        if (parseFloat(topASN.value) > 2.0) {
-          useMetricsStore.getState().addSecurityAlert({
-            id: `radar-bgp-${Date.now()}`,
-            type: 'BGP',
-            severity: 'CRITICAL',
-            title: `[BGP] ASN ${topASN.asn} (${topASN.ASName?.slice(0, 18) || 'Unknown'})`,
-            time: Date.now()
-          });
-        }
+        useMetricsStore.getState().addSecurityAlert({
+          id: `radar-bgp-${Date.now()}`,
+          type: 'BGP',
+          severity: parseFloat(topASN.value) > 2.0 ? 'CRITICAL' : 'HIGH',
+          title: `[BGP] ASN ${topASN.asn} (${topASN.ASName?.slice(0, 22) || 'Unknown'}) %${parseFloat(topASN.value).toFixed(1)}`,
+          time: Date.now(),
+          url: 'https://radar.cloudflare.com/routing'
+        });
       }
     }
   } catch (e) {}
@@ -216,8 +217,8 @@ export const connectCryptoWebSocket = () => {
         const data = JSON.parse(event.data);
         if (data.e === 'aggTrade') {
           const dollarValue = parseFloat(data.p) * parseFloat(data.q);
-          // 25.000$ üstü işlemler (daha sık veri akışı)
-          if (dollarValue > 25000) {
+          // 5.000$ üstü işlemler (sık veri akışı)
+          if (dollarValue > 5000) {
             const state = useMetricsStore.getState();
             const hubs = [{lat:40.7,lng:-74},{lat:51.5,lng:-0.1},{lat:35.6,lng:139},{lat:25.2,lng:55},{lat:41,lng:29},{lat:22.3,lng:114},{lat:1.3,lng:103.8}];
             const start = hubs[Math.floor(Math.random()*hubs.length)];

@@ -77,8 +77,9 @@ export interface SecurityAlert {
   id: string;
   type: 'CVE' | 'OSINT' | 'BGP' | 'CRYPTO' | 'OTX' | 'MALWARE' | 'BOTNET';
   title: string;
-  severity: string; // HIGH, CRITICAL, INFO
+  severity: string;
   time: number;
+  url?: string;
 }
 
 interface MetricsState {

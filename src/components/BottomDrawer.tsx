@@ -69,13 +69,10 @@ export default function BottomDrawer() {
                 <p style={{ fontSize: '0.65rem', color: '#ef4444', marginBottom: '4px', fontWeight: 'bold' }}>⚠ GÜVENLİK ALARMLARI</p>
                 {securityAlerts.slice(0, 8).map((alert, i) => {
                   const id = `alert-${alert.id}-${i}`;
-                  const link = alert.type === 'CVE' 
-                    ? `https://nvd.nist.gov/vuln/detail/${alert.title.replace('[CVE] ', '')}` 
-                    : alert.type === 'OTX' 
-                    ? 'https://otx.alienvault.com/dashboard' 
-                    : alert.type === 'BGP'
-                    ? 'https://radar.cloudflare.com/routing'
-                    : '#';
+                  const link = alert.url 
+                    || (alert.type === 'CVE' ? `https://nvd.nist.gov/vuln/detail/${alert.title.replace('[CVE] ', '')}` 
+                    : alert.type === 'OTX' ? 'https://otx.alienvault.com/dashboard'
+                    : alert.type === 'BGP' ? 'https://radar.cloudflare.com/routing' : '#');
                   return (
                     <div key={id} onClick={() => toggle(id)} style={{ cursor: 'pointer', padding: '4px 6px', marginBottom: '2px', borderRadius: '4px', background: expandedId === id ? 'rgba(168,85,247,0.1)' : 'transparent', borderLeft: expandedId === id ? '2px solid #a855f7' : '2px solid transparent', transition: 'all 0.2s' }}>
                       <div style={{ fontSize: '0.72rem', color: 'var(--text-primary)' }}>
@@ -111,7 +108,7 @@ export default function BottomDrawer() {
                       <p style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', marginBottom: '3px' }}>
                         <strong>Konum:</strong> {node.lat?.toFixed(2)}, {node.lng?.toFixed(2)} · <strong>Ülke:</strong> {node.country}
                       </p>
-                      <a href={`https://metrics.torproject.org/rs.html#details/${node.id}`} target="_blank" rel="noreferrer" style={{ fontSize: '0.65rem', color: '#a855f7', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                      <a href={`https://metrics.torproject.org/rs.html#search/${node.nickname}`} target="_blank" rel="noreferrer" style={{ fontSize: '0.65rem', color: '#a855f7', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
                         Relay Detayı <ExternalLink size={9} />
                       </a>
                     </div>
