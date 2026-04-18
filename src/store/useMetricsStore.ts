@@ -128,7 +128,7 @@ export const useMetricsStore = create<MetricsState>((set) => ({
     set((state) => {
       const now = Date.now();
       return {
-        cryptoWhales: state.cryptoWhales.filter((w) => now - w.time < 12000),
+        cryptoWhales: state.cryptoWhales.filter((w) => now - w.time < 60000),
       };
     }),
     

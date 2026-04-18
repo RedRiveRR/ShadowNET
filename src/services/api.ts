@@ -136,6 +136,26 @@ export const propagateSatellites = () => {
   setSatellites(updated);
 };
 
+// === SİBER GÜVENLİK (NVD CVE) ===
+export const fetchNVD = async () => {
+  try {
+    const res = await fetch('https://services.nvd.nist.gov/rest/json/cves/2.0?resultsPerPage=3');
+    if (res.ok) {
+      const data = await res.json();
+      if (data.vulnerabilities && data.vulnerabilities.length > 0) {
+        const cve = data.vulnerabilities[0].cve;
+        useMetricsStore.getState().addSecurityAlert({
+          id: cve.id + '-' + Date.now(),
+          type: 'CVE',
+          severity: cve.metrics?.cvssMetricV31?.[0]?.cvssData?.baseSeverity || 'HIGH',
+          title: `[CVE] ${cve.id}`,
+          time: Date.now()
+        });
+      }
+    }
+  } catch (e) {}
+};
+
 // === KRİPTO BALİNALAR (Binance WebSocket) ===
 let binanceWs: WebSocket | null = null;
 export const connectCryptoWebSocket = () => {
@@ -146,7 +166,8 @@ export const connectCryptoWebSocket = () => {
         const data = JSON.parse(event.data);
         if (data.e === 'aggTrade') {
           const dollarValue = parseFloat(data.p) * parseFloat(data.q);
-          if (dollarValue > 50000) {
+          // 25.000$ üstü işlemler (daha sık veri akışı)
+          if (dollarValue > 25000) {
             const state = useMetricsStore.getState();
             const hubs = [{lat:40.7,lng:-74},{lat:51.5,lng:-0.1},{lat:35.6,lng:139},{lat:25.2,lng:55},{lat:41,lng:29},{lat:22.3,lng:114},{lat:1.3,lng:103.8}];
             const start = hubs[Math.floor(Math.random()*hubs.length)];
@@ -155,7 +176,7 @@ export const connectCryptoWebSocket = () => {
             state.addCryptoWhale({
               id: `bn-${data.f}-${Math.random()}`, value: parseFloat(data.q),
               startLat: start.lat, startLng: start.lng, endLat: end.lat, endLng: end.lng,
-              time: Date.now(), source: `BINANCE ${data.m ? 'SATIŞ' : 'ALIŞ'}`
+              time: Date.now(), source: `BINANCE ${data.m ? 'SATIŞ' : 'ALIŞ'} $${(dollarValue/1000).toFixed(0)}K`
             });
           }
         }
@@ -167,27 +188,28 @@ export const connectCryptoWebSocket = () => {
 
 // === SİSTEM BAŞLATICI ===
 export const startDataStreams = () => {
-  // İlk yükleme
   fetchEarthquakes();
   fetchFlights();
   fetchISS();
   fetchSatellites();
   fetchNews();
   fetchTorNodes();
+  fetchNVD();
   connectCryptoWebSocket();
 
-  // Periyodik güncelleme
   setInterval(fetchEarthquakes, 60000);
   setInterval(fetchFlights, 10000);
   setInterval(fetchISS, 3000);
   setInterval(fetchSatellites, 300000);
-  setInterval(fetchNews, 60000);
+  setInterval(fetchNews, 120000);  // 2 dk - BBC güncellenince yeni haberler düşer
   setInterval(fetchTorNodes, 120000);
+  setInterval(fetchNVD, 90000);    // CVE her 1.5 dk
   setInterval(propagateSatellites, 2000);
-  setInterval(() => useMetricsStore.getState().clearOldCryptoWhales(), 1000);
+  setInterval(() => useMetricsStore.getState().clearOldCryptoWhales(), 5000);
   
-  // WebSocket yeniden bağlantı kontrolü
+  // WebSocket yeniden bağlantı
   setInterval(() => {
     if (!binanceWs || binanceWs.readyState === WebSocket.CLOSED) connectCryptoWebSocket();
   }, 5000);
 };
+

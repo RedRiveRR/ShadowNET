@@ -61,61 +61,58 @@ const shadowProxyPlugin = () => ({
       res.end(JSON.stringify(caches.satellites.data));
     });
 
-    // 3. Tor Exit Nodes (Sabit bilinen düğümler + canlı veri)
+    // 3. Tor Exit Nodes (Sabit listeden başla, canlı veri gelirse güncelle)
+    // Sabit listeyi hemen yükle
+    const staticTorNodes = [
+      { fingerprint: 'tor1', nickname: 'TorBerlin', latitude: 52.5, longitude: 13.4, country_name: 'Germany' },
+      { fingerprint: 'tor2', nickname: 'LibreRelay', latitude: 48.8, longitude: 2.3, country_name: 'France' },
+      { fingerprint: 'tor3', nickname: 'DigitalOcean1', latitude: 40.7, longitude: -74, country_name: 'United States' },
+      { fingerprint: 'tor4', nickname: 'AmsRelay', latitude: 52.3, longitude: 4.9, country_name: 'Netherlands' },
+      { fingerprint: 'tor5', nickname: 'TorSwiss', latitude: 47.3, longitude: 8.5, country_name: 'Switzerland' },
+      { fingerprint: 'tor6', nickname: 'TorJapan', latitude: 35.6, longitude: 139.7, country_name: 'Japan' },
+      { fingerprint: 'tor7', nickname: 'TorSingapore', latitude: 1.3, longitude: 103.8, country_name: 'Singapore' },
+      { fingerprint: 'tor8', nickname: 'TorBrazil', latitude: -23.5, longitude: -46.6, country_name: 'Brazil' },
+      { fingerprint: 'tor9', nickname: 'TorAustralia', latitude: -33.8, longitude: 151.2, country_name: 'Australia' },
+      { fingerprint: 'tor10', nickname: 'TorIstanbul', latitude: 41.0, longitude: 29.0, country_name: 'Turkey' },
+      { fingerprint: 'tor11', nickname: 'RusGuard', latitude: 55.7, longitude: 37.6, country_name: 'Russia' },
+      { fingerprint: 'tor12', nickname: 'TorIndia', latitude: 28.6, longitude: 77.2, country_name: 'India' },
+      { fingerprint: 'tor13', nickname: 'CanadaRelay', latitude: 43.6, longitude: -79.3, country_name: 'Canada' },
+      { fingerprint: 'tor14', nickname: 'SwedenNode', latitude: 59.3, longitude: 18.0, country_name: 'Sweden' },
+      { fingerprint: 'tor15', nickname: 'RomaniaExit', latitude: 44.4, longitude: 26.1, country_name: 'Romania' },
+    ];
+    if (caches.tor.data.length === 0) {
+      caches.tor.data = staticTorNodes;
+      caches.tor.lastFetch = Date.now();
+    }
     server.middlewares.use('/api/data/tor', async (_req: any, res: any) => {
-      const now = Date.now();
-      if (now - caches.tor.lastFetch > 600000 || caches.tor.data.length === 0) {
-        try {
-          // Onionoo bazen yavaş olabiliyor, timeout ile koru
-          const controller = new AbortController();
-          const timeout = setTimeout(() => controller.abort(), 8000);
-          const response = await fetch('https://onionoo.torproject.org/details?type=relay&running=true&limit=50&fields=fingerprint,nickname,country_name,latitude,longitude', { signal: controller.signal });
-          clearTimeout(timeout);
-          if (response.ok) {
-            const data = await response.json();
+      // Arka planda canlı güncelleme dene (bloklama yapmadan)
+      if (Date.now() - caches.tor.lastFetch > 600000) {
+        fetch('https://onionoo.torproject.org/details?type=relay&running=true&limit=30&fields=fingerprint,nickname,country_name,latitude,longitude')
+          .then(r => r.json())
+          .then(data => {
             const filtered = (data.relays || []).filter((r: any) => r.latitude && r.longitude);
-            if (filtered.length > 0) {
-              caches.tor.data = filtered;
-              caches.tor.lastFetch = now;
-            }
-          }
-        } catch (e) { 
-          // Timeout veya bağlantı hatası - Sabit düğüm listesi kullan
-          if (caches.tor.data.length === 0) {
-            caches.tor.data = [
-              { fingerprint: 'tor1', nickname: 'TorBerlin', latitude: 52.5, longitude: 13.4, country_name: 'Germany' },
-              { fingerprint: 'tor2', nickname: 'LibreRelay', latitude: 48.8, longitude: 2.3, country_name: 'France' },
-              { fingerprint: 'tor3', nickname: 'DigitalOcean1', latitude: 40.7, longitude: -74, country_name: 'United States' },
-              { fingerprint: 'tor4', nickname: 'AmsRelay', latitude: 52.3, longitude: 4.9, country_name: 'Netherlands' },
-              { fingerprint: 'tor5', nickname: 'TorSwiss', latitude: 47.3, longitude: 8.5, country_name: 'Switzerland' },
-              { fingerprint: 'tor6', nickname: 'TorJapan', latitude: 35.6, longitude: 139.7, country_name: 'Japan' },
-              { fingerprint: 'tor7', nickname: 'TorSingapore', latitude: 1.3, longitude: 103.8, country_name: 'Singapore' },
-              { fingerprint: 'tor8', nickname: 'TorBrazil', latitude: -23.5, longitude: -46.6, country_name: 'Brazil' },
-              { fingerprint: 'tor9', nickname: 'TorAustralia', latitude: -33.8, longitude: 151.2, country_name: 'Australia' },
-              { fingerprint: 'tor10', nickname: 'TorIstanbul', latitude: 41.0, longitude: 29.0, country_name: 'Turkey' },
-            ];
-            caches.tor.lastFetch = now;
-          }
-        }
+            if (filtered.length > 0) { caches.tor.data = filtered; caches.tor.lastFetch = Date.now(); }
+          })
+          .catch(() => {});
       }
       res.setHeader('Content-Type', 'application/json');
       res.end(JSON.stringify(caches.tor.data));
     });
 
-    // 4. Haberler (WikiMedia Recent Changes - her zaman çalışır, CORS yok)
+    // 4. Haberler (İngilizce Son Dakika - RSS2JSON ücretsiz servis)
     server.middlewares.use('/api/data/news', async (_req: any, res: any) => {
       const now = Date.now();
-      if (now - caches.news.lastFetch > CACHE_TTL) {
+      if (now - caches.news.lastFetch > 120000) { // 2 dk cache
         try {
-          // WikiMedia EventStreams yerine Wikipedia'nın açık API'sini kullanıyoruz
-          const response = await fetch('https://en.wikipedia.org/w/api.php?action=query&list=recentchanges&rcnamespace=0&rclimit=15&rctype=edit&rcshow=!minor&format=json');
+          const response = await fetch('https://api.rss2json.com/v1/api.json?rss_url=https://rss.nytimes.com/services/xml/rss/nyt/World.xml');
           if (response.ok) {
             const data = await response.json();
-            if (data.query && data.query.recentchanges) {
-              caches.news.data = data.query.recentchanges.map((rc: any) => ({
-                title: rc.title,
-                url: `https://en.wikipedia.org/wiki/${encodeURIComponent(rc.title)}`,
-                source: 'Wikipedia Global Edit'
+            if (data.items && data.items.length > 0) {
+              caches.news.data = data.items.map((item: any) => ({
+                title: item.title,
+                url: item.link,
+                source: 'NY Times World',
+                pubDate: item.pubDate
               }));
               caches.news.lastFetch = now;
             }
