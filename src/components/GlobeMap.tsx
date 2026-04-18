@@ -9,10 +9,24 @@ export default function GlobeMap() {
   
   const { earthquakes, flights, iss, disasters, cryptoWhales } = useMetricsStore();
 
+  const [zoomLevel, setZoomLevel] = useState(400);
+
   useEffect(() => {
     const handleResize = () => setDimensions({ width: window.innerWidth, height: window.innerHeight });
     window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
+    
+    // Zoom takibi için interval (Controls'tan mesafeyi çeker)
+    const interval = setInterval(() => {
+      if (globeRef.current) {
+        const dist = globeRef.current.controls().getDistance();
+        setZoomLevel(dist);
+      }
+    }, 500);
+
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      clearInterval(interval);
+    };
   }, []);
 
   useEffect(() => {
@@ -51,15 +65,18 @@ export default function GlobeMap() {
     return [...qRings, ...dRings];
   }, [earthquakes, disasters]);
 
-  const flightPoints = useMemo(() => {
+    // Performans ve kullanıcı isteği: Çok uzaktayken uçakları gizle veya küçült
+    // Sadece kamera 350 birimden daha yakınsa uçakları göster
+    if (zoomLevel > 350) return [];
+
     return (flights || []).map(f => ({
       lat: f.lat,
       lng: f.lng,
-      altitude: 0.02 + Math.random() * 0.02, 
+      altitude: 0.01 + Math.random() * 0.01, 
       color: '#38bdf8', 
-      radius: 0.15
+      radius: zoomLevel < 200 ? 0.25 : 0.12 // Yakınlaştıkça ikonlar büyüsün
     }));
-  }, [flights]);
+  }, [flights, zoomLevel]);
 
   const attackArcs = useMemo(() => {
     return (cryptoWhales || []).map(w => ({
@@ -81,8 +98,8 @@ export default function GlobeMap() {
   const issHtmlElement = () => {
     const el = document.createElement('div');
     el.innerHTML = `
-      <div style="background: white; border-radius: 5px; padding: 2px 6px; box-shadow: 0 0 20px #fff; transform: translate(-50%, -50%); border: 2px solid #38bdf8;">
-        <span style="font-size: 10px; font-weight: 800; color: #020617; font-family: monospace;">ISS</span>
+      <div style="background: white; border-radius: 5px; padding: 2px 6px; box-shadow: 0 0 20px #fff; transform: translate(-50%, -50%); border: 2px solid #38bdf8; white-space: nowrap;">
+        <span style="font-size: 10px; font-weight: 800; color: #020617; font-family: monospace;">UKS (ISS)</span>
       </div>
     `;
     return el;

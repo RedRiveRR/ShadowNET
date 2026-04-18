@@ -41,11 +41,11 @@ export default function BottomDrawer() {
           borderBottom: isOpen ? '1px solid rgba(16, 185, 129, 0.2)' : 'none',
           background: 'rgba(0, 0, 0, 0.5)'
         }}
-        title="Toggle Master Terminal"
+        title="Terminali Aç/Kapat"
       >
         {isOpen ? <ChevronDown color="var(--text-primary)" size={24} /> : <ChevronUp color="var(--text-primary)" size={24} />}
         <span className="mono" style={{ marginLeft: '10px', fontSize: '0.8rem', letterSpacing: '0.2em' }}>
-          {isOpen ? 'SYS.TERMINAL [ACTIVE]' : 'SYS.TERMINAL [STANDBY]'}
+          {isOpen ? 'SİS.TERMİNAL [AKTİF]' : 'SİS.TERMİNAL [BEKLEMEDE]'}
         </span>
       </div>
 
@@ -62,7 +62,7 @@ export default function BottomDrawer() {
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', border: '1px solid rgba(255,0,60,0.3)', borderRadius: '4px', background: 'rgba(0,0,0,0.4)' }}>
           <div style={{ padding: '0.8rem', borderBottom: '1px solid rgba(255,0,60,0.3)', display: 'flex', alignItems: 'center', gap: '10px' }}>
             <Terminal color="var(--color-cyber)" size={18} />
-            <h3 style={{ color: 'var(--color-cyber)', fontSize: '0.9rem' }}>THREAT INTELLIGENCE</h3>
+            <h3 style={{ color: 'var(--color-cyber)', fontSize: '0.9rem' }}>TEHDİT İSTİHBARATI</h3>
           </div>
           <div className="no-scrollbar" style={{ flex: 1, overflowY: 'auto', padding: '1rem' }}>
             {(securityAlerts || []).map((alert, i) => (
@@ -73,9 +73,9 @@ export default function BottomDrawer() {
                 </div>
                 {expandedLogId === alert.id && (
                   <div style={{ marginTop: '0.8rem', paddingTop: '0.8rem', borderTop: '1px dashed rgba(255,0,60,0.2)', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                    <p><strong>SEVERITY:</strong> {alert.severity}</p>
-                    <p><strong>RAW LOG:</strong> Threat actor detected via {alert.type} network sensors. Automated BGP analysis or deep packet inspection flagged anomalies.</p>
-                    <p><strong>ACTION:</strong> Logging to global vault.</p>
+                    <p><strong>CİDDİYET:</strong> {alert.severity}</p>
+                    <p><strong>HAM LOG:</strong> {alert.type} ağ sensörleri aracılığıyla tehdit aktörü tespit edildi. Otomatik BGP analizi veya derin paket incelemesi anomalileri işaretledi.</p>
+                    <p><strong>İŞLEM:</strong> Küresel arşive kaydediliyor.</p>
                   </div>
                 )}
               </div>
@@ -87,21 +87,21 @@ export default function BottomDrawer() {
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', border: '1px solid rgba(234,179,8,0.3)', borderRadius: '4px', background: 'rgba(0,0,0,0.4)' }}>
           <div style={{ padding: '0.8rem', borderBottom: '1px solid rgba(234,179,8,0.3)', display: 'flex', alignItems: 'center', gap: '10px' }}>
             <Bitcoin color="var(--color-finance)" size={18} />
-            <h3 style={{ color: 'var(--color-finance)', fontSize: '0.9rem' }}>FINANCIAL GRID</h3>
+            <h3 style={{ color: 'var(--color-finance)', fontSize: '0.9rem' }}>FİNANSAL VERİ AĞI</h3>
           </div>
           <div className="no-scrollbar" style={{ flex: 1, overflowY: 'auto', padding: '1rem' }}>
             {(cryptoWhales || []).map((whale, i) => (
               <div key={whale.id + i} className="log-item finance" onClick={(e) => toggleExpand(whale.id, e)}>
                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <strong style={{ fontSize: '0.8rem', color: 'var(--text-primary)' }}>[WHALE] {whale.value.toFixed(2)} BTC</strong>
+                  <strong style={{ fontSize: '0.8rem', color: 'var(--text-primary)' }}>[BALİNA] {whale.value.toFixed(2)} BTC</strong>
                   <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>{new Date(whale.time).toLocaleTimeString()}</span>
                 </div>
                 {expandedLogId === whale.id && (
                   <div style={{ marginTop: '0.8rem', paddingTop: '0.8rem', borderTop: '1px dashed rgba(234,179,8,0.2)', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                    <p><strong>ROUTE:</strong> [{whale.startLat.toFixed(2)}, {whale.startLng.toFixed(2)}] &rarr; [{whale.endLat.toFixed(2)}, {whale.endLng.toFixed(2)}]</p>
-                    <p><strong>NETWORK:</strong> {whale.source || 'Blockchain.info Unconfirmed Pool'}</p>
+                    <p><strong>ROTA:</strong> [{whale.startLat.toFixed(2)}, {whale.startLng.toFixed(2)}] &rarr; [{whale.endLat.toFixed(2)}, {whale.endLng.toFixed(2)}]</p>
+                    <p><strong>AĞ:</strong> {whale.source || 'Blockchain.info Bekleyen Havuz'}</p>
                     <a href="https://www.blockchain.com/explorer" target="_blank" rel="noreferrer" style={{ color: 'var(--color-finance)', display: 'inline-flex', alignItems: 'center', marginTop: '6px', textDecoration: 'none' }}>
-                       View Mempool <ExternalLink size={12} style={{ marginLeft: '4px' }} />
+                       Mempool Görüntüle <ExternalLink size={12} style={{ marginLeft: '4px' }} />
                     </a>
                   </div>
                 )}
@@ -114,7 +114,7 @@ export default function BottomDrawer() {
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', border: '1px solid rgba(245,158,11,0.3)', borderRadius: '4px', background: 'rgba(0,0,0,0.4)' }}>
           <div style={{ padding: '0.8rem', borderBottom: '1px solid rgba(245,158,11,0.3)', display: 'flex', alignItems: 'center', gap: '10px' }}>
             <Earth color="var(--color-nature)" size={18} />
-            <h3 style={{ color: 'var(--color-nature)', fontSize: '0.9rem' }}>GLOBAL SEISMIC</h3>
+            <h3 style={{ color: 'var(--color-nature)', fontSize: '0.9rem' }}>KÜRESEL SİSMİK İZLEME</h3>
           </div>
           <div className="no-scrollbar" style={{ flex: 1, overflowY: 'auto', padding: '1rem' }}>
             
@@ -127,9 +127,9 @@ export default function BottomDrawer() {
                 </div>
                 {expandedLogId === `d-${d.id}` && (
                    <div style={{ marginTop: '0.8rem', paddingTop: '0.8rem', borderTop: '1px dashed rgba(245,158,11,0.2)', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                     <p><strong>RISK RANK:</strong> {d.alertLevel}</p>
-                     <p><strong>LOCATION:</strong> LAT {d.lat.toFixed(2)}, LNG {d.lng.toFixed(2)}</p>
-                     <p><strong>SOURCE:</strong> UN Global Disaster Alert</p>
+                     <p><strong>RİSK DERECESİ:</strong> {d.alertLevel}</p>
+                     <p><strong>KONUM:</strong> ENLEM {d.lat.toFixed(2)}, BOYLAM {d.lng.toFixed(2)}</p>
+                     <p><strong>KAYNAK:</strong> BM Küresel Felaket Uyarı Sistemi</p>
                    </div>
                 )}
               </div>
@@ -144,11 +144,11 @@ export default function BottomDrawer() {
                 </div>
                 {expandedLogId === `q-${q.id}` && (
                    <div style={{ marginTop: '0.8rem', paddingTop: '0.8rem', borderTop: '1px dashed rgba(245,158,11,0.2)', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                     <p><strong>MAGNITUDE:</strong> {q.mag}</p>
-                     <p><strong>COORDINATES:</strong> {q.lat.toFixed(2)}, {q.lng.toFixed(2)}</p>
-                     <p><strong>AGENCY:</strong> U.S. Geological Survey (USGS)</p>
+                     <p><strong>BÜYÜKLÜK:</strong> {q.mag}</p>
+                     <p><strong>KOORDİNATLAR:</strong> {q.lat.toFixed(2)}, {q.lng.toFixed(2)}</p>
+                     <p><strong>KURUM:</strong> ABD Jeolojik Araştırma Merkezi (USGS)</p>
                      <a href={`https://earthquake.usgs.gov/earthquakes/eventpage/${q.id}/executive`} target="_blank" rel="noreferrer" style={{ color: 'var(--color-nature)', display: 'inline-flex', alignItems: 'center', marginTop: '6px', textDecoration: 'none' }}>
-                       View USGS Report <ExternalLink size={12} style={{ marginLeft: '4px' }} />
+                       USGS Raporunu Görüntüle <ExternalLink size={12} style={{ marginLeft: '4px' }} />
                      </a>
                    </div>
                 )}

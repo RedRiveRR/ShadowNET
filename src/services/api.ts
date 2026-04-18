@@ -28,14 +28,15 @@ export const fetchFlights = async () => {
     
     const data = await response.json();
     if (data && data.ac) {
-      // ADSB.lol verileri 'ac' (aircraft) isimli array objesinden döner
-      const flightsSample = data.ac.slice(0, 250).filter((s: any) => s.lat !== undefined && s.lon !== undefined);
+      // Proxy artık sadece ASKERİ ve VIP uçuşlarını (Tahmini 400 civarı) döndürüyor.
+      // Hepsini render edebiliriz, sivil uçaklar kadar tarayıcıyı dondurmaz.
+      const flightsSample = data.ac.filter((s: any) => s.lat !== undefined && s.lon !== undefined);
       const flights: Flight[] = flightsSample.map((s: any) => ({
         id: s.hex || Math.random().toString(), 
         lng: s.lon, 
         lat: s.lat, 
         alt: s.alt_baro || 0, 
-        country: s.flight ? s.flight.trim() : 'Unknown',
+        country: s.flight ? s.flight.trim() : 'Unknown Military/VIP',
       }));
       useMetricsStore.getState().setFlights(flights);
     }

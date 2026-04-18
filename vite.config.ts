@@ -2,9 +2,9 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
 // --- Backend Cache Mechanism (Otonom Proxy) ---
-// Vite sunucusu arka planda çalışırken OpenSky ağına bağlanır, veriyi çeker ve 20 saniye hafızasında tutar.
+// Vite sunucusu arka planda çalışırken ADSB ağına bağlanır, veriyi çeker ve hafızasında tutar.
 // Böylece frontend rate limit (429) veya CORS yemez.
-let flightCache = { states: null };
+let flightCache: any = { ac: [] };
 let lastFetch = 0;
 
 const flightProxyPlugin = () => ({
@@ -13,25 +13,31 @@ const flightProxyPlugin = () => ({
     server.middlewares.use('/api/flights', async (req: any, res: any) => {
       const now = Date.now();
       
-      // Eğer önbellek 30 saniyeden eskiyse arka plandan OpenSky'ı güncelle
-      if (now - lastFetch > 30000 || !flightCache.states) { 
+      // Eğer önbellek 30 saniyeden eskiyse arka plandan ADSB'yi güncelle
+      if (now - lastFetch > 30000 || !flightCache.ac || flightCache.ac.length === 0) { 
          try {
             // ADSB.lol: Topluluk destekli sınırsız uçak veri sensörü
-            // Avrupa hava sahasındaki (LATS 50, LONS 10 merkezli 250 mil çapındaki) uçuşlar
-            const openSkyUrl = 'https://api.adsb.lol/v2/point/50/10/250';
-            const req = await fetch(openSkyUrl);
+            // GLOBAL MILITARY (Askeri uçaklar) ve VIP LADD (Sansürlü Özel Jetler)
+            const [milRes, laddRes] = await Promise.all([
+              fetch('https://api.adsb.lol/v2/mil'),
+              fetch('https://api.adsb.lol/v2/ladd')
+            ]);
             
-            if (req.ok) {
-              const data = await req.json();
-              if (data && data.ac) {
-                 flightCache = data;
-                 lastFetch = now;
-              }
+            if (milRes.ok && laddRes.ok) {
+              const milData = await milRes.json();
+              const laddData = await laddRes.json();
+              
+              let combinedAc: any[] = [];
+              if (milData.ac) combinedAc = combinedAc.concat(milData.ac);
+              if (laddData.ac) combinedAc = combinedAc.concat(laddData.ac);
+              
+              flightCache = { ac: combinedAc };
+              lastFetch = now;
             } else {
-               console.error('[Backend Proxy] ADSB.lol reddetti. Status:', req.status);
+               console.error('[Backend Proxy] ADSB.lol API Error');
             }
          } catch(e) {
-            console.error('[Backend Proxy] OpenSky bağlantı hatası:', e);
+            console.error('[Backend Proxy] Proxy hatası:', e);
          }
       }
       
