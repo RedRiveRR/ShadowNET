@@ -65,11 +65,13 @@ export default function GlobeMap() {
     return [...qRings, ...dRings];
   }, [earthquakes, disasters]);
 
+  const flightPoints = useMemo(() => {
     // Performans ve kullanıcı isteği: Çok uzaktayken uçakları gizle veya küçült
     // Sadece kamera 350 birimden daha yakınsa uçakları göster
     if (zoomLevel > 350) return [];
 
     return (flights || []).map(f => ({
+      id: f.id,
       lat: f.lat,
       lng: f.lng,
       altitude: 0.01 + Math.random() * 0.01, 
@@ -124,7 +126,8 @@ export default function GlobeMap() {
         pointColor="color"
         pointAltitude="altitude"
         pointRadius="radius"
-        pointsMerge={true} 
+        pointsMerge={false} 
+        pointTransitionDuration={9000}
 
         arcsData={attackArcs}
         arcStartLat="startLat"
