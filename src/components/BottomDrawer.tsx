@@ -99,7 +99,7 @@ export default function BottomDrawer() {
                 {expandedLogId === whale.id && (
                   <div style={{ marginTop: '0.8rem', paddingTop: '0.8rem', borderTop: '1px dashed rgba(234,179,8,0.2)', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
                     <p><strong>ROUTE:</strong> [{whale.startLat.toFixed(2)}, {whale.startLng.toFixed(2)}] &rarr; [{whale.endLat.toFixed(2)}, {whale.endLng.toFixed(2)}]</p>
-                    <p><strong>NETWORK:</strong> Blockchain.info Unconfirmed Pool</p>
+                    <p><strong>NETWORK:</strong> {whale.source || 'Blockchain.info Unconfirmed Pool'}</p>
                     <a href="https://www.blockchain.com/explorer" target="_blank" rel="noreferrer" style={{ color: 'var(--color-finance)', display: 'inline-flex', alignItems: 'center', marginTop: '6px', textDecoration: 'none' }}>
                        View Mempool <ExternalLink size={12} style={{ marginLeft: '4px' }} />
                     </a>

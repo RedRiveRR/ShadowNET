@@ -25,6 +25,7 @@ export interface CryptoWhale {
   endLng: number;
   value: number; // in BTC
   time: number;
+  source?: string;
 }
 
 export interface ISSData {
@@ -46,7 +47,7 @@ export interface Disaster {
 
 export interface SecurityAlert {
   id: string;
-  type: 'CVE' | 'OSINT' | 'BGP' | 'CRYPTO' | 'OTX';
+  type: 'CVE' | 'OSINT' | 'BGP' | 'CRYPTO' | 'OTX' | 'MALWARE';
   title: string;
   severity: string; // HIGH, CRITICAL, INFO
   time: number;
@@ -63,6 +64,7 @@ interface MetricsState {
   setEarthquakes: (quakes: Earthquake[]) => void;
   setFlights: (flights: Flight[]) => void;
   
+  setCryptoWhales: (whales: CryptoWhale[]) => void;
   addCryptoWhale: (whale: CryptoWhale) => void;
   clearOldCryptoWhales: () => void;
   
@@ -82,6 +84,7 @@ export const useMetricsStore = create<MetricsState>((set) => ({
   setEarthquakes: (quakes) => set({ earthquakes: quakes }),
   setFlights: (flights) => set({ flights }),
     
+  setCryptoWhales: (whales) => set({ cryptoWhales: whales }),
   addCryptoWhale: (whale) =>
     set((state) => ({
       cryptoWhales: [...state.cryptoWhales.slice(-19), whale],

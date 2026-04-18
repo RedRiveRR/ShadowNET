@@ -1,5 +1,5 @@
 import { useMetricsStore } from '../store/useMetricsStore';
-import type { Earthquake, Flight, ISSData, Disaster, SecurityAlert } from '../store/useMetricsStore';
+import type { Earthquake, Flight, ISSData, Disaster, SecurityAlert, CryptoWhale } from '../store/useMetricsStore';
 
 // === ORIGINAL APIS ===
 
@@ -21,21 +21,21 @@ export const fetchEarthquakes = async () => {
 
 export const fetchFlights = async () => {
   try {
-    // OpenSky imposes harsh rate limits for global queries.
-    // Let's use a bounding box for Europe+Asia to drastically reduce payload size (makes it fast and bypasses 429 limits mostly).
-    const boundUrl = 'https://opensky-network.org/api/states/all?lamin=35.0&lomin=-10.0&lamax=60.0&lomax=40.0';
-    const response = await fetch('https://api.allorigins.win/get?url=' + encodeURIComponent(boundUrl));
+    // Artık veri çekme işlemini BİZİM yazdığımız Vite Server Proxy'si yapıyor. 
+    // Proxy kendi içinde 30 sn'lik Redis benzeri RAM Cache mekanizması çalıştırıyor. Yüzde 100 anti-ban sistemi!
+    const response = await fetch('/api/flights');
     if (!response.ok) return;
     
-    const wrapper = await response.json();
-    if (!wrapper.contents) return;
-    
-    const data = JSON.parse(wrapper.contents);
-    if (data && data.states) {
-      // Pick top 250 visible flights globally
-      const flightsSample = data.states.slice(0, 250).filter((s: any) => s[5] !== null && s[6] !== null);
+    const data = await response.json();
+    if (data && data.ac) {
+      // ADSB.lol verileri 'ac' (aircraft) isimli array objesinden döner
+      const flightsSample = data.ac.slice(0, 250).filter((s: any) => s.lat !== undefined && s.lon !== undefined);
       const flights: Flight[] = flightsSample.map((s: any) => ({
-        id: s[0], lng: s[5], lat: s[6], alt: s[7] || 0, country: s[2],
+        id: s.hex || Math.random().toString(), 
+        lng: s.lon, 
+        lat: s.lat, 
+        alt: s.alt_baro || 0, 
+        country: s.flight ? s.flight.trim() : 'Unknown',
       }));
       useMetricsStore.getState().setFlights(flights);
     }
@@ -138,6 +138,32 @@ export const fetchOTX = async () => {
   }
 };
 
+// === URLHAUS MALWARE BOTNETS ===
+
+export const fetchURLHaus = async () => {
+  try {
+    // URLHaus gives recent active malware domains
+    const response = await fetch('https://api.allorigins.win/get?url=' + encodeURIComponent('https://urlhaus-api.abuse.ch/v1/urls/recent/'));
+    if (response.ok) {
+      const wrapper = await response.json();
+      if (!wrapper.contents) return;
+      
+      const data = JSON.parse(wrapper.contents);
+      if (data.urls && data.urls.length > 0) {
+         // Get a random newly active payload
+         const malware = data.urls[Math.floor(Math.random() * 5)];
+         useMetricsStore.getState().addSecurityAlert({
+            id: `malware-${malware.id}-${Date.now()}`,
+            type: 'MALWARE',
+            severity: 'CRITICAL',
+            title: `[URLHAUS] Yeni Zararlı Sunucu Aktif: ${malware.url.slice(0, 30)}...`,
+            time: Date.now()
+         });
+      }
+    }
+  } catch(e) { console.error('URLHaus Error:', e); }
+};
+
 // === CLOUDFLARE RADAR ===
 
 export const fetchRadar = async () => {
@@ -174,7 +200,7 @@ export const fetchRadar = async () => {
   }
 }
 
-// === Kripto Balinaları (Blockchain.info) ===
+// === Kripto Balinaları (Blockchain.info + Binance Websocket) ===
 
 const financialHubs = [
   { name: 'New York', lat: 40.7, lng: -74.0 }, { name: 'London', lat: 51.5, lng: -0.1 },
@@ -184,46 +210,89 @@ const financialHubs = [
   { name: 'Istanbul', lat: 41.0, lng: 28.9 }, { name: 'San Francisco', lat: 37.7, lng: -122.4 }
 ];
 
-export const initCryptoWebsocket = () => {
+let ws: WebSocket | null = null;
+let binanceWs: WebSocket | null = null;
+
+export const connectCryptoWebSocket = () => {
+  // 1. Blockchain.info (Legacy BTC Mempool)
   try {
-    const ws = new WebSocket('wss://ws.blockchain.info/inv');
-    ws.onopen = () => {
-      ws.send(JSON.stringify({ "op": "unconfirmed_sub" }));
-    };
-    ws.onmessage = (event) => {
-      try {
-        const msg = JSON.parse(event.data);
-        if (msg.op === 'utx') {
-          let totalVal = 0;
-          msg.x.out.forEach((out: any) => { totalVal += out.value; });
-          const btc = totalVal / 100000000;
+    if (!ws || ws.readyState === WebSocket.CLOSED) {
+      ws = new WebSocket('wss://ws.blockchain.info/inv');
+      ws.onopen = () => {
+        ws?.send(JSON.stringify({ "op": "unconfirmed_sub" }));
+      };
+      
+      ws.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        if (data.op === 'utx' && data.x) {
+          let totalValue = 0;
+          data.x.out.forEach((out: any) => { totalValue += out.value; });
+          const btcValue = totalValue / 100000000;
           
-          if (btc > 5.0) { // Only log big transactions > 5 BTC to avoid spam
-            const source = financialHubs[Math.floor(Math.random() * financialHubs.length)];
-            let target = financialHubs[Math.floor(Math.random() * financialHubs.length)];
-            while(target === source) target = financialHubs[Math.floor(Math.random() * financialHubs.length)];
+          if (btcValue > 5) { 
+            const state = useMetricsStore.getState();
             
-            useMetricsStore.getState().addCryptoWhale({
-              id: `btc-${Math.random()}`,
-              startLat: source.lat, startLng: source.lng,
-              endLat: target.lat, endLng: target.lng,
-              value: btc, time: Date.now()
-            });
+            const startLat = (Math.random() * 140) - 70;
+            const startLng = (Math.random() * 360) - 180;
+            const endLat = (Math.random() * 140) - 70;
+            const endLng = (Math.random() * 360) - 180;
             
-            useMetricsStore.getState().addSecurityAlert({
-              id: `btc-alert-${Math.random()}`,
-              type: 'CRYPTO',
-              severity: 'INFO',
-              title: `Crypto Balinası: ${btc.toFixed(2)} BTC`,
-              time: Date.now()
-            });
+            const newWhale: CryptoWhale = {
+              id: data.x.hash,
+              value: btcValue,
+              startLat, startLng, endLat, endLng,
+              time: Date.now(),
+              source: 'BTC MEMPOOL'
+            };
+            
+            const newWhales = [newWhale, ...state.cryptoWhales].slice(0, 40);
+            state.setCryptoWhales(newWhales);
           }
         }
-      } catch (e) {}
-    };
-  } catch (e) {
-    console.log("WebSocket failed");
-  }
+      };
+    }
+  } catch (e) { console.error('Blockchain WS Error', e); }
+
+  // 2. Binance Live AggTrade Stream (For Exact $50k+ Trades)
+  try {
+    if (!binanceWs || binanceWs.readyState === WebSocket.CLOSED) {
+      binanceWs = new WebSocket('wss://stream.binance.com:9443/ws/btcusdt@aggTrade');
+      
+      binanceWs.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        if (data.e === 'aggTrade') {
+          const price = parseFloat(data.p);
+          const quantity = parseFloat(data.q);
+          const dollarValue = price * quantity;
+          
+          // Eğer tekil bir işlem 50.000$ (Elli Bin Dolar) üzerindeyse!
+          if (dollarValue > 50000) {
+            const state = useMetricsStore.getState();
+            
+            // Finans merkezleri arası lazer atışı uydur (New York, Londra, Tokyo, Dubai vb coords)
+            const startHub = financialHubs[Math.floor(Math.random() * financialHubs.length)];
+            let endHub = financialHubs[Math.floor(Math.random() * financialHubs.length)];
+            while(endHub.lat === startHub.lat) endHub = financialHubs[Math.floor(Math.random() * financialHubs.length)];
+            
+            const newWhale: CryptoWhale = {
+              id: `binance-${data.T}-${Math.random()}`,
+              value: dollarValue / price, // BTC Equivalent
+              startLat: startHub.lat, 
+              startLng: startHub.lng, 
+              endLat: endHub.lat, 
+              endLng: endHub.lng,
+              time: Date.now(),
+              source: `BINANCE ${data.m ? 'SELL' : 'BUY'} WALL`
+            };
+            
+            // Lazer limitini 40'a çıkartalım, borsada çok aksiyon var!
+            const newWhales = [newWhale, ...state.cryptoWhales].slice(0, 40);
+            state.setCryptoWhales(newWhales);
+          }
+        }
+      };
+    }
+  } catch (e) { console.error('Binance WS Error', e); }
 };
 
 // === BOOTSTRAP ===
@@ -237,16 +306,18 @@ export const startDataStreams = () => {
   fetchNVD();
   fetchOTX();
   fetchRadar();
-  initCryptoWebsocket();
+  fetchURLHaus();
+  connectCryptoWebSocket();
 
   // Intervals
   setInterval(fetchEarthquakes, 60000); 
-  setInterval(fetchFlights, 60000); // Relaxed to 60s to prevent OpenSky ban
+  setInterval(fetchFlights, 10000); // Artık 10 saniyede bir çekebiliriz, çünkü asıl istekleri çeken proxy! 
   setInterval(fetchISS, 3000);
   setInterval(fetchGDACS, 300000); // 5 mins
   setInterval(fetchNVD, 60000); // Check NVD every minute
   setInterval(fetchOTX, 60000); // Check AlienVault every minute
   setInterval(fetchRadar, 120000); // Check Cloudflare Radar every 2 mins
+  setInterval(fetchURLHaus, 120000); // Check URLHaus Malware IPs every 2 mins
 
   setInterval(() => {
     useMetricsStore.getState().clearOldCryptoWhales();
