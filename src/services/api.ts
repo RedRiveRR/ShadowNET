@@ -21,10 +21,17 @@ export const fetchEarthquakes = async () => {
 
 export const fetchFlights = async () => {
   try {
-    const response = await fetch('https://opensky-network.org/api/states/all');
-    if (response.status === 429) return;
-    const data = await response.json();
-    if (data.states) {
+    // OpenSky imposes harsh rate limits and CORS blocks for massive global queries without accounts.
+    // Wrap with allorigins to bypass CORS and caching to reduce 429 blocks.
+    const response = await fetch('https://api.allorigins.win/get?url=' + encodeURIComponent('https://opensky-network.org/api/states/all'));
+    if (!response.ok) return;
+    
+    const wrapper = await response.json();
+    if (!wrapper.contents) return;
+    
+    const data = JSON.parse(wrapper.contents);
+    if (data && data.states) {
+      // Pick top 250 visible flights globally
       const flightsSample = data.states.slice(0, 250).filter((s: any) => s[5] !== null && s[6] !== null);
       const flights: Flight[] = flightsSample.map((s: any) => ({
         id: s[0], lng: s[5], lat: s[6], alt: s[7] || 0, country: s[2],
@@ -233,8 +240,8 @@ export const startDataStreams = () => {
 
   // Intervals
   setInterval(fetchEarthquakes, 60000); 
-  setInterval(fetchFlights, 15000); 
-  setInterval(fetchISS, 3000); // ISS moves fast!
+  setInterval(fetchFlights, 60000); // Relaxed to 60s to prevent OpenSky ban
+  setInterval(fetchISS, 3000);
   setInterval(fetchGDACS, 300000); // 5 mins
   setInterval(fetchNVD, 60000); // Check NVD every minute
   setInterval(fetchOTX, 60000); // Check AlienVault every minute
