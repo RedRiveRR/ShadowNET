@@ -108,8 +108,8 @@ export default function BottomDrawer() {
                       <p style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', marginBottom: '3px' }}>
                         <strong>Konum:</strong> {node.lat?.toFixed(2)}, {node.lng?.toFixed(2)} · <strong>Ülke:</strong> {node.country}
                       </p>
-                      <a href={`https://metrics.torproject.org/rs.html#search/${node.nickname}`} target="_blank" rel="noreferrer" style={{ fontSize: '0.65rem', color: '#a855f7', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
-                        Relay Detayı <ExternalLink size={9} />
+                      <a href={`https://metrics.torproject.org/rs.html#search/country:${(node.country || '').toLowerCase().slice(0,2)}`} target="_blank" rel="noreferrer" style={{ fontSize: '0.65rem', color: '#a855f7', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                        Ülkedeki Relay'ler <ExternalLink size={9} />
                       </a>
                     </div>
                   )}

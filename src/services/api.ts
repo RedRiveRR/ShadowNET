@@ -156,14 +156,10 @@ export const fetchNVD = async () => {
   } catch (e) {}
 };
 
-// === ALIENVAULT OTX ===
+// === ALIENVAULT OTX (Proxy üzerinden) ===
 export const fetchOTX = async () => {
   try {
-    const key = import.meta.env.VITE_OTX_API_KEY;
-    if (!key) return;
-    const response = await fetch('https://otx.alienvault.com/api/v1/pulses/subscribed?limit=5', {
-      headers: { 'X-OTX-API-KEY': key }
-    });
+    const response = await fetch('/api/data/otx');
     if (response.ok) {
       const data = await response.json();
       if (data.results && data.results.length > 0) {
@@ -182,14 +178,10 @@ export const fetchOTX = async () => {
   } catch (e) {}
 };
 
-// === CLOUDFLARE RADAR (BGP Anomalileri) ===
+// === CLOUDFLARE RADAR (Proxy üzerinden) ===
 export const fetchRadar = async () => {
   try {
-    const cfToken = import.meta.env.VITE_CLOUDFLARE_API_TOKEN;
-    if (!cfToken) return;
-    const response = await fetch('https://api.cloudflare.com/client/v4/radar/bgp/top/ases?limit=3&dateRange=1d', {
-      headers: { 'Authorization': `Bearer ${cfToken}`, 'Content-Type': 'application/json' }
-    });
+    const response = await fetch('/api/data/radar');
     if (response.ok) {
       const data = await response.json();
       if (data.result && data.result.top_0 && data.result.top_0.length > 0) {

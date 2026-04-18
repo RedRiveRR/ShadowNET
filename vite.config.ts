@@ -1,5 +1,9 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import { config as dotenvConfig } from 'dotenv'
+
+// .env dosyasını sunucu tarafında yükle
+dotenvConfig();
 
 // --- ShadowNet V7 Multi-Service Proxy ---
 const CACHE_TTL = 60000;
@@ -121,6 +125,43 @@ const shadowProxyPlugin = () => ({
       }
       res.setHeader('Content-Type', 'application/json');
       res.end(JSON.stringify(caches.news.data));
+    });
+
+    // 5. Cloudflare Radar BGP (CORS bypass)
+    server.middlewares.use('/api/data/radar', async (_req: any, res: any) => {
+      try {
+        const response = await fetch('https://api.cloudflare.com/client/v4/radar/bgp/top/ases?limit=3&dateRange=1d', {
+          headers: {
+            'Authorization': 'Bearer ' + (process.env.VITE_CLOUDFLARE_API_TOKEN || ''),
+            'Content-Type': 'application/json'
+          }
+        });
+        if (response.ok) {
+          const data = await response.json();
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify(data));
+          return;
+        }
+      } catch (e) { console.error('[Proxy] Radar Error:', e); }
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ result: null }));
+    });
+
+    // 6. AlienVault OTX (CORS bypass)
+    server.middlewares.use('/api/data/otx', async (_req: any, res: any) => {
+      try {
+        const response = await fetch('https://otx.alienvault.com/api/v1/pulses/subscribed?limit=5', {
+          headers: { 'X-OTX-API-KEY': process.env.VITE_OTX_API_KEY || '' }
+        });
+        if (response.ok) {
+          const data = await response.json();
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify(data));
+          return;
+        }
+      } catch (e) { console.error('[Proxy] OTX Error:', e); }
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ results: [] }));
     });
   }
 });
