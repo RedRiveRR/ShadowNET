@@ -7,22 +7,18 @@ export default function GlobeMap() {
   const globeRef = useRef<any>();
   const [dimensions, setDimensions] = useState({ width: window.innerWidth, height: window.innerHeight });
   
-  const { earthquakes, flights, iss, disasters, cryptoWhales } = useMetricsStore();
+  const { earthquakes, flights, iss, disasters, cryptoWhales, satellites, newsEvents, torNodes } = useMetricsStore();
 
   const [zoomLevel, setZoomLevel] = useState(400);
 
   useEffect(() => {
     const handleResize = () => setDimensions({ width: window.innerWidth, height: window.innerHeight });
     window.addEventListener('resize', handleResize);
-    
-    // Zoom takibi için interval (Controls'tan mesafeyi çeker)
     const interval = setInterval(() => {
       if (globeRef.current) {
-        const dist = globeRef.current.controls().getDistance();
-        setZoomLevel(dist);
+        setZoomLevel(globeRef.current.controls().getDistance());
       }
     }, 500);
-
     return () => {
       window.removeEventListener('resize', handleResize);
       clearInterval(interval);
@@ -35,80 +31,70 @@ export default function GlobeMap() {
       controls.autoRotate = true;
       controls.autoRotateSpeed = 0.5; 
       controls.enableDamping = true;
-      controls.dampingFactor = 0.05;
       controls.minDistance = 150;
-      controls.maxDistance = 600;
+      controls.maxDistance = 700;
     }
   }, []);
 
-  // UseMemo protects against constant recreation of massive loops
-  const combinedRingsData = useMemo(() => {
+  // 1. Yangınlar & Depremler (Halkalar)
+  const ringsData = useMemo(() => {
     const qRings = (earthquakes || []).map(q => ({
-      lat: q.lat,
-      lng: q.lng,
-      maxR: (q.mag || 1) * 1.5,
-      propagationSpeed: 1,
-      repeatPeriod: 800 + Math.random() * 1000,
-      color: () => `rgba(245, 158, 11, ${0.4 + Math.random() * 0.4})` // Amber
+      lat: q.lat, lng: q.lng, maxR: q.mag * 1.5, propagationSpeed: 1, repeatPeriod: 1000, color: 'rgba(245, 158, 11, 0.7)'
     }));
+    return qRings;
+  }, [earthquakes]);
 
-    const dRings = (disasters || []).map(d => ({
-      lat: d.lat,
-      lng: d.lng,
-      maxR: 8,
-      propagationSpeed: 0.5,
-      repeatPeriod: 1200,
-      // Red for dangerous, green for low risk
-      color: () => d.alertLevel === 'Red' ? 'rgba(239, 68, 68, 0.8)' : d.alertLevel === 'Orange' ? 'rgba(245, 158, 11, 0.8)' : 'rgba(34, 197, 94, 0.8)'
-    }));
+  // 2. Uçaklar & Uydular & Tor Düğümleri (Noktalar)
+  const pointsData = useMemo(() => {
+    const data: any[] = [];
 
-    return [...qRings, ...dRings];
-  }, [earthquakes, disasters]);
+    // Uçaklar (Mavi)
+    if (zoomLevel < 350) {
+      flights.forEach(f => data.push({ lat: f.lat, lng: f.lng, color: '#38bdf8', radius: 0.12, type: 'flight' }));
+    }
 
-  const flightPoints = useMemo(() => {
-    // Performans ve kullanıcı isteği: Çok uzaktayken uçakları gizle veya küçült
-    // Sadece kamera 350 birimden daha yakınsa uçakları göster
-    if (zoomLevel > 350) return [];
+    // Tor Düğümleri (Mor) - Sadece yakınlaşınca
+    if (zoomLevel < 250) {
+      torNodes.forEach(n => data.push({ lat: n.lat, lng: n.lng, color: '#a855f7', radius: 0.08, type: 'tor' }));
+    }
 
-    return (flights || []).map(f => ({
-      id: f.id,
-      lat: f.lat,
-      lng: f.lng,
-      altitude: 0.01 + Math.random() * 0.01, 
-      color: '#38bdf8', 
-      radius: zoomLevel < 200 ? 0.25 : 0.12 // Yakınlaştıkça ikonlar büyüsün
-    }));
-  }, [flights, zoomLevel]);
+    // Uydular (Beyaz/Gümüş)
+    satellites.forEach(s => {
+      if (s.lat !== undefined) {
+        data.push({ lat: s.lat, lng: s.lng, altitude: s.alt || 0.1, color: '#f8fafc', radius: 0.08, type: 'satellite' });
+      }
+    });
 
-  const attackArcs = useMemo(() => {
+    return data;
+  }, [flights, torNodes, satellites, zoomLevel]);
+
+  // 3. Finansal Akışlar (Yaylar)
+  const arcsData = useMemo(() => {
     return (cryptoWhales || []).map(w => ({
-      startLat: w.startLat,
-      startLng: w.startLng,
-      endLat: w.endLat,
-      endLng: w.endLng,
-      color: '#fbbf24', // Golden color for Bitcoin whales
-      altitude: 0.4, // Higher arcs
-      stroke: 1.2
+      startLat: w.startLat, startLng: w.startLng, endLat: w.endLat, endLng: w.endLng,
+      color: '#fbbf24', altitude: 0.5, stroke: 1.2
     }));
   }, [cryptoWhales]);
 
-  const issDataArray = useMemo(() => {
-    if (iss) return [{ lat: iss.lat, lng: iss.lng, altitude: 0.25 }];
-    return [];
-  }, [iss]);
+  // 4. Haber İstihbaratı (HTML İşaretçiler)
+  const htmlData = useMemo(() => {
+    const list = (newsEvents || []).map(n => ({ lat: n.lat, lng: n.lng, name: n.title, type: 'news' }));
+    if (iss) list.push({ lat: iss.lat, lng: iss.lng, name: 'UKS (ISS)', type: 'iss' });
+    return list;
+  }, [newsEvents, iss]);
 
-  const issHtmlElement = () => {
+  const renderHtmlElement = (d: any) => {
     const el = document.createElement('div');
-    el.innerHTML = `
-      <div style="background: white; border-radius: 5px; padding: 2px 6px; box-shadow: 0 0 20px #fff; transform: translate(-50%, -50%); border: 2px solid #38bdf8; white-space: nowrap;">
-        <span style="font-size: 10px; font-weight: 800; color: #020617; font-family: monospace;">UKS (ISS)</span>
-      </div>
-    `;
+    if (d.type === 'iss') {
+      el.innerHTML = `<div style="background: white; border-radius: 4px; padding: 2px 6px; box-shadow: 0 0 10px #fff; border: 1px solid #38bdf8; font-size: 9px; font-weight: bold; color: #000;">${d.name}</div>`;
+    } else {
+      el.innerHTML = `<div class="pulse-marker" style="width: 8px; height: 8px; background: #ef4444; border-radius: 50%; box-shadow: 0 0 10px #ef4444;"></div>`;
+    }
     return el;
   };
 
   return (
-    <div style={{ position: 'absolute', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: 1, pointerEvents: 'auto' }}>
+    <div style={{ position: 'absolute', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: 1 }}>
       <Globe
         ref={globeRef}
         width={dimensions.width}
@@ -116,34 +102,28 @@ export default function GlobeMap() {
         globeImageUrl="//unpkg.com/three-globe/example/img/earth-topology.png"
         backgroundColor="#000000"
         
-        ringsData={combinedRingsData}
+        ringsData={ringsData}
         ringColor="color"
         ringMaxRadius="maxR"
-        ringPropagationSpeed="propagationSpeed"
-        ringRepeatPeriod="repeatPeriod"
-
-        pointsData={flightPoints}
+        
+        pointsData={pointsData}
         pointColor="color"
         pointAltitude="altitude"
         pointRadius="radius"
-        pointsMerge={false} 
-        pointTransitionDuration={9000}
+        pointsMerge={false}
+        pointTransitionDuration={1000}
 
-        arcsData={attackArcs}
-        arcStartLat="startLat"
-        arcStartLng="startLng"
-        arcEndLat="endLat"
-        arcEndLng="endLng"
+        arcsData={arcsData}
         arcColor="color"
         arcDashLength={0.4}
         arcDashGap={0.2}
-        arcDashAnimateTime={800}
+        arcDashAnimateTime={1000}
         arcAltitude="altitude"
         arcStroke="stroke"
 
-        htmlElementsData={issDataArray}
-        htmlElement={issHtmlElement}
-        htmlAltitude="altitude"
+        htmlElementsData={htmlData}
+        htmlElement={renderHtmlElement}
+        htmlAltitude={d => d.type === 'iss' ? 0.25 : 0.02}
       />
     </div>
   );

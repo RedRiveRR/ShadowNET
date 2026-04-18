@@ -40,14 +40,42 @@ export interface Disaster {
   lat: number;
   lng: number;
   title: string;
-  type: string; // EQ (Earthquake), TC (Tropical Cyclone), FL (Flood)...
+  type: string; 
   alertLevel: string; // Green, Orange, Red
   time: number;
 }
 
+export interface Satellite {
+  id: string;
+  name: string;
+  tle1: string;
+  tle2: string;
+  lat?: number;
+  lng?: number;
+  alt?: number;
+}
+
+export interface NewsEvent {
+  id: string;
+  title: string;
+  url: string;
+  source: string;
+  time: number;
+  lat?: number;
+  lng?: number;
+}
+
+export interface TorNode {
+  id: string;
+  nickname: string;
+  lat: number;
+  lng: number;
+  country: string;
+}
+
 export interface SecurityAlert {
   id: string;
-  type: 'CVE' | 'OSINT' | 'BGP' | 'CRYPTO' | 'OTX' | 'MALWARE';
+  type: 'CVE' | 'OSINT' | 'BGP' | 'CRYPTO' | 'OTX' | 'MALWARE' | 'BOTNET';
   title: string;
   severity: string; // HIGH, CRITICAL, INFO
   time: number;
@@ -60,17 +88,22 @@ interface MetricsState {
   iss: ISSData | null;
   disasters: Disaster[];
   securityAlerts: SecurityAlert[];
+  satellites: Satellite[];
+  newsEvents: NewsEvent[];
+  torNodes: TorNode[];
   
   setEarthquakes: (quakes: Earthquake[]) => void;
   setFlights: (flights: Flight[]) => void;
-  
   setCryptoWhales: (whales: CryptoWhale[]) => void;
   addCryptoWhale: (whale: CryptoWhale) => void;
   clearOldCryptoWhales: () => void;
-  
   setISS: (iss: ISSData) => void;
   setDisasters: (disasters: Disaster[]) => void;
   addSecurityAlert: (alert: SecurityAlert) => void;
+  
+  setSatellites: (sats: Satellite[]) => void;
+  setNewsEvents: (news: NewsEvent[]) => void;
+  setTorNodes: (nodes: TorNode[]) => void;
 }
 
 export const useMetricsStore = create<MetricsState>((set) => ({
@@ -80,20 +113,22 @@ export const useMetricsStore = create<MetricsState>((set) => ({
   iss: null,
   disasters: [],
   securityAlerts: [],
+  satellites: [],
+  newsEvents: [],
+  torNodes: [],
   
   setEarthquakes: (quakes) => set({ earthquakes: quakes }),
   setFlights: (flights) => set({ flights }),
-    
   setCryptoWhales: (whales) => set({ cryptoWhales: whales }),
   addCryptoWhale: (whale) =>
     set((state) => ({
-      cryptoWhales: [...state.cryptoWhales.slice(-19), whale],
+      cryptoWhales: [...state.cryptoWhales.slice(-39), whale],
     })),
   clearOldCryptoWhales: () =>
     set((state) => {
       const now = Date.now();
       return {
-        cryptoWhales: state.cryptoWhales.filter((w) => now - w.time < 8000),
+        cryptoWhales: state.cryptoWhales.filter((w) => now - w.time < 12000),
       };
     }),
     
@@ -101,7 +136,10 @@ export const useMetricsStore = create<MetricsState>((set) => ({
   setDisasters: (disasters) => set({ disasters }),
   addSecurityAlert: (alert) =>
     set((state) => ({
-      // keep max 20 latest security/osint alerts
-      securityAlerts: [alert, ...state.securityAlerts].slice(0, 20),
+      securityAlerts: [alert, ...state.securityAlerts].slice(0, 30),
     })),
+
+  setSatellites: (satellites) => set({ satellites }),
+  setNewsEvents: (newsEvents) => set({ newsEvents }),
+  setTorNodes: (torNodes) => set({ torNodes }),
 }));
