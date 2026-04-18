@@ -156,6 +156,56 @@ export const fetchNVD = async () => {
   } catch (e) {}
 };
 
+// === ALIENVAULT OTX ===
+export const fetchOTX = async () => {
+  try {
+    const key = import.meta.env.VITE_OTX_API_KEY;
+    if (!key) return;
+    const response = await fetch('https://otx.alienvault.com/api/v1/pulses/subscribed?limit=3', {
+      headers: { 'X-OTX-API-KEY': key }
+    });
+    if (response.ok) {
+      const data = await response.json();
+      if (data.results && data.results.length > 0) {
+        const pulse = data.results[0];
+        useMetricsStore.getState().addSecurityAlert({
+          id: `otx-${pulse.id}-${Date.now()}`,
+          type: 'OTX',
+          severity: 'CRITICAL',
+          title: `[OTX] ${pulse.name.slice(0, 40)}`,
+          time: Date.now()
+        });
+      }
+    }
+  } catch (e) {}
+};
+
+// === CLOUDFLARE RADAR (BGP Anomalileri) ===
+export const fetchRadar = async () => {
+  try {
+    const cfToken = import.meta.env.VITE_CLOUDFLARE_API_TOKEN;
+    if (!cfToken) return;
+    const response = await fetch('https://api.cloudflare.com/client/v4/radar/bgp/top/ases?limit=1&dateRange=1d', {
+      headers: { 'Authorization': `Bearer ${cfToken}`, 'Content-Type': 'application/json' }
+    });
+    if (response.ok) {
+      const data = await response.json();
+      if (data.result && data.result.top_0 && data.result.top_0.length > 0) {
+        const topASN = data.result.top_0[0];
+        if (parseFloat(topASN.value) > 2.0) {
+          useMetricsStore.getState().addSecurityAlert({
+            id: `radar-bgp-${Date.now()}`,
+            type: 'BGP',
+            severity: 'CRITICAL',
+            title: `[BGP] ASN ${topASN.asn} (${topASN.ASName?.slice(0, 18) || 'Unknown'})`,
+            time: Date.now()
+          });
+        }
+      }
+    }
+  } catch (e) {}
+};
+
 // === KRİPTO BALİNALAR (Binance WebSocket) ===
 let binanceWs: WebSocket | null = null;
 export const connectCryptoWebSocket = () => {
@@ -195,15 +245,19 @@ export const startDataStreams = () => {
   fetchNews();
   fetchTorNodes();
   fetchNVD();
+  fetchOTX();
+  fetchRadar();
   connectCryptoWebSocket();
 
   setInterval(fetchEarthquakes, 60000);
   setInterval(fetchFlights, 10000);
   setInterval(fetchISS, 3000);
   setInterval(fetchSatellites, 300000);
-  setInterval(fetchNews, 120000);  // 2 dk - BBC güncellenince yeni haberler düşer
+  setInterval(fetchNews, 120000);
   setInterval(fetchTorNodes, 120000);
-  setInterval(fetchNVD, 90000);    // CVE her 1.5 dk
+  setInterval(fetchNVD, 90000);
+  setInterval(fetchOTX, 60000);
+  setInterval(fetchRadar, 120000);
   setInterval(propagateSatellites, 2000);
   setInterval(() => useMetricsStore.getState().clearOldCryptoWhales(), 5000);
   
