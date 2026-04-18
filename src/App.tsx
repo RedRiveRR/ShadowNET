@@ -3,6 +3,7 @@ import GlobeMap from './components/GlobeMap';
 import LeftPanel from './components/LeftPanel';
 import RightPanel from './components/RightPanel';
 import BottomDrawer from './components/BottomDrawer';
+import Legend from './components/Legend';
 import { startDataStreams } from './services/api';
 import './App.css';
 
@@ -25,6 +26,7 @@ function App() {
       {/* Dashboard UI Overlay */}
       <LeftPanel />
       <RightPanel />
+      <Legend />
       <BottomDrawer />
     </div>
   );

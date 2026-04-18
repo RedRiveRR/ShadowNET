@@ -33,32 +33,45 @@ export default function GlobeMap() {
       controls.enableDamping = true;
       controls.minDistance = 150;
       controls.maxDistance = 700;
+      
+      // Işıklandırma ayarları: Karanlık ülkeleri görünür kılmak için
+      const scene = globeRef.current.scene();
+      const ambientLight = new THREE.AmbientLight(0xffffff, 0.6); // Genel aydınlatma
+      scene.add(ambientLight);
+      
+      const mainLight = new THREE.DirectionalLight(0xffffff, 0.8);
+      mainLight.position.set(1, 1, 1);
+      scene.add(mainLight);
     }
   }, []);
 
-  // 1. Yangınlar & Depremler (Halkalar)
+  // 1. Depremler (Halkalar) - ONARILDI: Animasyon parametreleri eklendi
   const ringsData = useMemo(() => {
-    const qRings = (earthquakes || []).map(q => ({
-      lat: q.lat, lng: q.lng, maxR: q.mag * 1.5, propagationSpeed: 1, repeatPeriod: 1000, color: 'rgba(245, 158, 11, 0.7)'
+    return (earthquakes || []).map(q => ({
+      lat: q.lat, 
+      lng: q.lng, 
+      maxR: q.mag * 2, 
+      propagationSpeed: 1, 
+      repeatPeriod: 1000, 
+      color: 'rgba(245, 158, 11, 0.8)'
     }));
-    return qRings;
   }, [earthquakes]);
 
-  // 2. Uçaklar & Uydular & Tor Düğümleri (Noktalar)
+  // 2. Noktalar (Uçaklar, Uydular, Tor)
   const pointsData = useMemo(() => {
     const data: any[] = [];
 
-    // Uçaklar (Mavi)
-    if (zoomLevel < 350) {
-      flights.forEach(f => data.push({ lat: f.lat, lng: f.lng, color: '#38bdf8', radius: 0.12, type: 'flight' }));
+    // Uçaklar (Geri Geldi)
+    if (zoomLevel < 400) {
+      flights.forEach(f => data.push({ lat: f.lat, lng: f.lng, color: '#38bdf8', radius: zoomLevel < 250 ? 0.25 : 0.15, type: 'flight' }));
     }
 
-    // Tor Düğümleri (Mor) - Sadece yakınlaşınca
-    if (zoomLevel < 250) {
-      torNodes.forEach(n => data.push({ lat: n.lat, lng: n.lng, color: '#a855f7', radius: 0.08, type: 'tor' }));
+    // Tor Düğümleri
+    if (zoomLevel < 300) {
+      torNodes.forEach(n => data.push({ lat: n.lat, lng: n.lng, color: '#a855f7', radius: 0.1, type: 'tor' }));
     }
 
-    // Uydular (Beyaz/Gümüş)
+    // Uydular
     satellites.forEach(s => {
       if (s.lat !== undefined) {
         data.push({ lat: s.lat, lng: s.lng, altitude: s.alt || 0.1, color: '#f8fafc', radius: 0.08, type: 'satellite' });
@@ -68,7 +81,7 @@ export default function GlobeMap() {
     return data;
   }, [flights, torNodes, satellites, zoomLevel]);
 
-  // 3. Finansal Akışlar (Yaylar)
+  // 3. Yaylar (Bitcoin)
   const arcsData = useMemo(() => {
     return (cryptoWhales || []).map(w => ({
       startLat: w.startLat, startLng: w.startLng, endLat: w.endLat, endLng: w.endLng,
@@ -76,7 +89,7 @@ export default function GlobeMap() {
     }));
   }, [cryptoWhales]);
 
-  // 4. Haber İstihbaratı (HTML İşaretçiler)
+  // 4. HTML Sinyaller (Haberler)
   const htmlData = useMemo(() => {
     const list = (newsEvents || []).map(n => ({ lat: n.lat, lng: n.lng, name: n.title, type: 'news' }));
     if (iss) list.push({ lat: iss.lat, lng: iss.lng, name: 'UKS (ISS)', type: 'iss' });
@@ -88,7 +101,7 @@ export default function GlobeMap() {
     if (d.type === 'iss') {
       el.innerHTML = `<div style="background: white; border-radius: 4px; padding: 2px 6px; box-shadow: 0 0 10px #fff; border: 1px solid #38bdf8; font-size: 9px; font-weight: bold; color: #000;">${d.name}</div>`;
     } else {
-      el.innerHTML = `<div class="pulse-marker" style="width: 8px; height: 8px; background: #ef4444; border-radius: 50%; box-shadow: 0 0 10px #ef4444;"></div>`;
+      el.innerHTML = `<div class="pulse-marker" style="width: 10px; height: 10px; background: #ef4444; border-radius: 50%; box-shadow: 0 0 15px #ef4444;"></div>`;
     }
     return el;
   };
@@ -99,12 +112,21 @@ export default function GlobeMap() {
         ref={globeRef}
         width={dimensions.width}
         height={dimensions.height}
-        globeImageUrl="//unpkg.com/three-globe/example/img/earth-topology.png"
+        // Yüksek çözünürlüklü ve Premium Gece Dokusu
+        globeImageUrl="//unpkg.com/three-globe/example/img/earth-night.jpg"
+        bumpImageUrl="//unpkg.com/three-globe/example/img/earth-topology.png"
         backgroundColor="#000000"
         
+        // Atmosfer ayarları (Karanlıkta sınırların belli olması için)
+        showAtmosphere={true}
+        atmosphereColor="#38bdf8"
+        atmosphereAltitude={0.2}
+
         ringsData={ringsData}
         ringColor="color"
         ringMaxRadius="maxR"
+        ringPropagationSpeed="propagationSpeed"
+        ringRepeatPeriod="repeatPeriod"
         
         pointsData={pointsData}
         pointColor="color"
@@ -123,7 +145,7 @@ export default function GlobeMap() {
 
         htmlElementsData={htmlData}
         htmlElement={renderHtmlElement}
-        htmlAltitude={d => d.type === 'iss' ? 0.25 : 0.02}
+        htmlAltitude={d => d.type === 'iss' ? 0.35 : 0.05}
       />
     </div>
   );
