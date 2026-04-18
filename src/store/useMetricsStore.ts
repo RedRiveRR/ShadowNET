@@ -14,15 +14,16 @@ export interface Flight {
   lat: number;
   lng: number;
   alt: number;
-  country: string;
+  heading?: number; // track
+  speed?: number;   // ground speed
+  callsign: string;
+  type?: string;    // aircraft type
+  reg?: string;     // registration
+  velocity_m_s?: number; // for interpolation
 }
 
 export interface CryptoWhale {
   id: string;
-  startLat: number;
-  startLng: number;
-  endLat: number;
-  endLng: number;
   value: number; // in BTC
   time: number;
   source?: string;
@@ -53,6 +54,7 @@ export interface Satellite {
   lat?: number;
   lng?: number;
   alt?: number;
+  path?: { lat: number; lng: number }[];
 }
 
 export interface NewsEvent {
@@ -92,8 +94,13 @@ interface MetricsState {
   satellites: Satellite[];
   newsEvents: NewsEvent[];
   torNodes: TorNode[];
+  selectedFlight: Flight | null;
+  selectedSatellite: Satellite | null;
+  selectedISS: boolean;
+  activeView: 'GLOBE' | 'RADAR';
   
   setEarthquakes: (quakes: Earthquake[]) => void;
+  setActiveView: (view: 'GLOBE' | 'RADAR') => void;
   setFlights: (flights: Flight[]) => void;
   setCryptoWhales: (whales: CryptoWhale[]) => void;
   addCryptoWhale: (whale: CryptoWhale) => void;
@@ -105,6 +112,9 @@ interface MetricsState {
   setSatellites: (sats: Satellite[]) => void;
   setNewsEvents: (news: NewsEvent[]) => void;
   setTorNodes: (nodes: TorNode[]) => void;
+  setSelectedFlight: (flight: Flight | null) => void;
+  setSelectedSatellite: (sat: Satellite | null) => void;
+  setSelectedISS: (open: boolean) => void;
 }
 
 export const useMetricsStore = create<MetricsState>((set) => ({
@@ -117,8 +127,13 @@ export const useMetricsStore = create<MetricsState>((set) => ({
   satellites: [],
   newsEvents: [],
   torNodes: [],
+  selectedFlight: null,
+  selectedSatellite: null,
+  selectedISS: false,
+  activeView: 'GLOBE',
   
   setEarthquakes: (quakes) => set({ earthquakes: quakes }),
+  setActiveView: (view) => set({ activeView: view }),
   setFlights: (flights) => set({ flights }),
   setCryptoWhales: (whales) => set({ cryptoWhales: whales }),
   addCryptoWhale: (whale) =>
@@ -143,4 +158,7 @@ export const useMetricsStore = create<MetricsState>((set) => ({
   setSatellites: (satellites) => set({ satellites }),
   setNewsEvents: (newsEvents) => set({ newsEvents }),
   setTorNodes: (torNodes) => set({ torNodes }),
+  setSelectedFlight: (flight) => set({ selectedFlight: flight }),
+  setSelectedSatellite: (sat) => set({ selectedSatellite: sat }),
+  setSelectedISS: (open) => set({ selectedISS: open }),
 }));

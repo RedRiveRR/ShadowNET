@@ -23,21 +23,27 @@ export const fetchFlights = async () => {
     const response = await fetch('/api/data/flights');
     if (!response.ok) return;
     const data = await response.json();
-    if (data && data.ac) {
+    if (data && data.states) {
       const flights: Flight[] = [];
-      for (const s of data.ac) {
-        // Koordinat çözümleme: lat/lon > rr_lat/rr_lon > lastPosition
-        let lat = s.lat;
-        let lng = s.lon;
-        if (lat === undefined || lat === null) lat = s.rr_lat;
-        if (lng === undefined || lng === null) lng = s.rr_lon;
-        if (lat === undefined || lat === null || lng === undefined || lng === null) continue;
-        if (typeof lat !== 'number' || typeof lng !== 'number') continue;
-        
+      // Performans/görsellik dengesi için ilk 1500 uçağı alıyoruz
+      const relevantStates = data.states.slice(0, 1500);
+
+      for (const s of relevantStates) {
+        const lat = s[6];
+        const lng = s[5];
+        if (lat === null || lng === null) continue;
+
         flights.push({
-          id: s.hex || String(Math.random()),
-          lat, lng, alt: typeof s.alt_baro === 'number' ? s.alt_baro : 0,
-          country: s.flight ? s.flight.trim() : (s.r || 'Askeri/Özel'),
+          id: s[0], // icao24
+          lat, 
+          lng, 
+          alt: s[7] ? Math.round(s[7] * 3.28084) : 0, // Metreyi feet'e çevir
+          heading: s[10] || 0,
+          speed: s[9] ? Math.round(s[9] * 1.94384) : 0, // m/s'yi Knot'a çevir (Interpolation m/s de kullanabilir)
+          velocity_m_s: s[9] || 0, // Orijinal velocity (m/s) ara değer motoru için
+          callsign: s[1] ? s[1].trim() : 'UNK',
+          type: 'COMM', 
+          reg: 'N/A'
         });
       }
       useMetricsStore.getState().setFlights(flights);
@@ -62,27 +68,34 @@ export const fetchSatellites = async () => {
   } catch (e) { console.error('Uydu Hatası:', e); }
 };
 
-// === HABERLER ===
+// === HABERLER (Keyword-Geocoding) ===
+const COUNTRY_MAP: Record<string, {lat: number, lng: number}> = {
+  'USA': {lat: 37, lng: -95}, 'US': {lat: 37, lng: -95}, 'United States': {lat: 37, lng: -95},
+  'Iran': {lat: 32, lng: 53}, 'Russia': {lat: 61, lng: 105}, 'Ukraine': {lat: 48, lng: 31},
+  'China': {lat: 35, lng: 103}, 'Israel': {lat: 31, lng: 35}, 'Turkey': {lat: 39, lng: 35},
+  'UK': {lat: 55, lng: -3}, 'Germany': {lat: 51, lng: 10}, 'France': {lat: 46, lng: 2},
+  'Havana': {lat: 23, lng: -82}, 'Cuba': {lat: 21, lng: -77}, 'Kyiv': {lat: 50, lng: 30},
+  'Taiwan': {lat: 23, lng: 121}, 'Japan': {lat: 36, lng: 138}, 'Gaza': {lat: 31.3, lng: 34.3}
+};
+
 export const fetchNews = async () => {
   try {
     const response = await fetch('/api/data/news');
     if (!response.ok) return;
     const data = await response.json();
     if (Array.isArray(data) && data.length > 0) {
-      // Her habere dünyanın farklı bölgelerinden koordinat ata
-      const regions = [
-        {lat: 48.8, lng: 2.3}, {lat: 40.7, lng: -74}, {lat: 35.6, lng: 139.7},
-        {lat: -33.8, lng: 151.2}, {lat: 55.7, lng: 37.6}, {lat: 39.9, lng: 116.4},
-        {lat: 28.6, lng: 77.2}, {lat: -22.9, lng: -43.2}, {lat: 30, lng: 31},
-        {lat: 41, lng: 29}, {lat: 52.5, lng: 13.4}, {lat: 37.5, lng: 127},
-        {lat: 19.4, lng: -99.1}, {lat: 1.3, lng: 103.8}, {lat: -1.2, lng: 36.8}
-      ];
       const news: NewsEvent[] = data.map((art: any, i: number) => {
-        const region = regions[i % regions.length];
+        let lat, lng;
+        // Başlıkta ülke ara
+        for (const [key, coords] of Object.entries(COUNTRY_MAP)) {
+          if (art.title.toLowerCase().includes(key.toLowerCase())) {
+            lat = coords.lat; lng = coords.lng;
+            break;
+          }
+        }
         return {
           id: `news-${i}-${Date.now()}`, title: art.title, url: art.url || '',
-          source: art.source || 'NY Times World', time: Date.now(),
-          lat: region.lat + (Math.random() * 6 - 3), lng: region.lng + (Math.random() * 6 - 3)
+          source: art.source || 'NY Times World', time: Date.now(), lat, lng
         };
       });
       useMetricsStore.getState().setNewsEvents(news);
@@ -117,7 +130,7 @@ export const fetchISS = async () => {
   } catch (e) {}
 };
 
-// === UYDU YÖRÜNGE MOTORU ===
+// === UYDU YÖRÜNGE MOTORU (90dk Path) ===
 export const propagateSatellites = () => {
   const { satellites, setSatellites } = useMetricsStore.getState();
   if (!satellites.length) return;
@@ -126,11 +139,35 @@ export const propagateSatellites = () => {
     try {
       if (!s.tle1 || !s.tle2) return s;
       const satrec = satellite.twoline2satrec(s.tle1, s.tle2);
+      
+      // Mevcut konum
       const posVel = satellite.propagate(satrec, now);
       if (!posVel.position || typeof posVel.position === 'boolean') return s;
       const gmst = satellite.gstime(now);
       const posGd = satellite.eciToGeodetic(posVel.position as satellite.EciVec3<number>, gmst);
-      return { ...s, lat: satellite.degreesLat(posGd.latitude), lng: satellite.degreesLong(posGd.longitude), alt: posGd.height / 6371 };
+      
+      // 90 dakikalık yörünge yolu (Orbit Path) - 15 nokta
+      const path = [];
+      for (let i = 0; i < 90; i += 6) {
+        const futureTime = new Date(now.getTime() + i * 60000);
+        const fPosVel = satellite.propagate(satrec, futureTime);
+        if (fPosVel.position && typeof fPosVel.position !== 'boolean') {
+          const fGmst = satellite.gstime(futureTime);
+          const fPosGd = satellite.eciToGeodetic(fPosVel.position as satellite.EciVec3<number>, fGmst);
+          path.push({
+            lat: satellite.degreesLat(fPosGd.latitude),
+            lng: satellite.degreesLong(fPosGd.longitude)
+          });
+        }
+      }
+
+      return { 
+        ...s, 
+        lat: satellite.degreesLat(posGd.latitude), 
+        lng: satellite.degreesLong(posGd.longitude), 
+        alt: posGd.height / 6371,
+        path 
+      };
     } catch (e) { return s; }
   });
   setSatellites(updated);
@@ -209,16 +246,9 @@ export const connectCryptoWebSocket = () => {
         const data = JSON.parse(event.data);
         if (data.e === 'aggTrade') {
           const dollarValue = parseFloat(data.p) * parseFloat(data.q);
-          // 5.000$ üstü işlemler (sık veri akışı)
           if (dollarValue > 5000) {
-            const state = useMetricsStore.getState();
-            const hubs = [{lat:40.7,lng:-74},{lat:51.5,lng:-0.1},{lat:35.6,lng:139},{lat:25.2,lng:55},{lat:41,lng:29},{lat:22.3,lng:114},{lat:1.3,lng:103.8}];
-            const start = hubs[Math.floor(Math.random()*hubs.length)];
-            let end = hubs[Math.floor(Math.random()*hubs.length)];
-            while (end === start) end = hubs[Math.floor(Math.random()*hubs.length)];
-            state.addCryptoWhale({
+            useMetricsStore.getState().addCryptoWhale({
               id: `bn-${data.f}-${Math.random()}`, value: parseFloat(data.q),
-              startLat: start.lat, startLng: start.lng, endLat: end.lat, endLng: end.lng,
               time: Date.now(), source: `BINANCE ${data.m ? 'SATIŞ' : 'ALIŞ'} $${(dollarValue/1000).toFixed(0)}K`
             });
           }
@@ -243,7 +273,7 @@ export const startDataStreams = () => {
   connectCryptoWebSocket();
 
   setInterval(fetchEarthquakes, 60000);
-  setInterval(fetchFlights, 10000);
+  setInterval(fetchFlights, 5000);
   setInterval(fetchISS, 3000);
   setInterval(fetchSatellites, 300000);
   setInterval(fetchNews, 120000);

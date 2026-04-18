@@ -17,22 +17,20 @@ const caches: any = {
 const shadowProxyPlugin = () => ({
   name: 'shadow-proxy',
   configureServer(server: any) {
-    // 1. Uçuşlar (ADSB.lol MIL + LADD)
+    // 1. Uçuşlar (OpenSky Network API - Global Veri)
     server.middlewares.use('/api/data/flights', async (_req: any, res: any) => {
       const now = Date.now();
-      if (now - caches.flights.lastFetch > 30000) {
+      if (now - caches.flights.lastFetch > 10000) { // OpenSky için 10s ideal (Limitleri korur)
         try {
-          const [milRes, laddRes] = await Promise.all([
-            fetch('https://api.adsb.lol/v2/mil'),
-            fetch('https://api.adsb.lol/v2/ladd')
-          ]);
-          if (milRes.ok && laddRes.ok) {
-            const milData = await milRes.json();
-            const laddData = await laddRes.json();
-            caches.flights.data = { ac: [...(milData.ac || []), ...(laddData.ac || [])] };
+          // OpenSky states/all endpoint'i (Anonim erişim: 100 istek/gün, ama proxy üzerinden kontrol altında)
+          const response = await fetch('https://opensky-network.org/api/states/all');
+          if (response.ok) {
+            const data = await response.json();
+            // OpenSky formatı: { states: [ [icao24, callsign, origin, pos_time, contact, lon, lat, alt, on_ground, vel, track...], ... ] }
+            caches.flights.data = data;
             caches.flights.lastFetch = now;
           }
-        } catch (e) { console.error('[Proxy] Flight Error:', e); }
+        } catch (e) { console.error('[Proxy] OpenSky Error:', e); }
       }
       res.setHeader('Content-Type', 'application/json');
       res.end(JSON.stringify(caches.flights.data));

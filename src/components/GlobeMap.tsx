@@ -2,135 +2,175 @@ import { useEffect, useRef, useState, useMemo } from 'react';
 import Globe from 'react-globe.gl';
 import * as THREE from 'three';
 import { useMetricsStore } from '../store/useMetricsStore';
+import { X, Plane as PlaneIcon, Gauge, Navigation, Globe as EarthIcon, Rocket, Zap, Crosshair, Play, Pause } from 'lucide-react';
+
+// === PAYLAŞILAN 3D KAYNAKLAR ===
+const planeGeom = new THREE.CylinderGeometry(0, 0.15, 1, 8); 
+const wingGeom = new THREE.BoxGeometry(1, 0.02, 0.3);
+const flightMatNormal = new THREE.MeshBasicMaterial({ color: '#facc15' });
+const flightMatSelected = new THREE.MeshBasicMaterial({ color: '#ffffff' });
+
+const satGeom = new THREE.BoxGeometry(0.3, 0.3, 0.3);
+const satPanelGeom = new THREE.PlaneGeometry(1, 0.25);
+const satMat = new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.8 });
+const satPanelMat = new THREE.MeshBasicMaterial({ color: '#1d4ed8', side: THREE.DoubleSide });
+
+const issTrussGeom = new THREE.CylinderGeometry(0.1, 0.1, 4, 8);
+const issPanelGeom = new THREE.PlaneGeometry(0.7, 1.8);
+const issMat = new THREE.MeshBasicMaterial({ color: '#fbbf24' });
 
 export default function GlobeMap() {
   const globeRef = useRef<any>();
   const [dimensions, setDimensions] = useState({ width: window.innerWidth, height: window.innerHeight });
-  const { earthquakes, flights, iss, cryptoWhales, satellites, newsEvents, torNodes } = useMetricsStore();
-  const [zoomLevel, setZoomLevel] = useState(400);
+  const { 
+    flights, iss, satellites, earthquakes, newsEvents,
+    selectedFlight, setSelectedFlight,
+    selectedSatellite, setSelectedSatellite,
+    selectedISS, setSelectedISS
+  } = useMetricsStore();
+  
+  const [isRotating, setIsRotating] = useState(true);
+
+
 
   useEffect(() => {
     const handleResize = () => setDimensions({ width: window.innerWidth, height: window.innerHeight });
     window.addEventListener('resize', handleResize);
-    const zoomTracker = setInterval(() => {
-      if (globeRef.current) setZoomLevel(globeRef.current.controls().getDistance());
-    }, 500);
-    return () => { window.removeEventListener('resize', handleResize); clearInterval(zoomTracker); };
+    return () => window.removeEventListener('resize', handleResize);
   }, []);
 
   useEffect(() => {
     if (!globeRef.current) return;
     const controls = globeRef.current.controls();
-    controls.autoRotate = true;
+    controls.autoRotate = isRotating;
     controls.autoRotateSpeed = 0.4;
-    controls.enableDamping = true;
-    controls.minDistance = 150;
-    controls.maxDistance = 700;
-  }, []);
+  }, [isRotating]);
 
-  // === DEPREM HALKALARI ===
-  const ringsData = useMemo(() => {
-    return (earthquakes || []).map(q => ({
-      lat: q.lat, lng: q.lng,
-      maxR: Math.max(q.mag * 2, 2),
-      propagationSpeed: 2,
-      repeatPeriod: 800,
-      color: () => `rgba(245, 158, 11, ${0.5 + Math.random() * 0.3})`
-    }));
-  }, [earthquakes]);
 
-  // === TÜM NOKTALAR (Uçak + Uydu + Tor) ===
-  const pointsData = useMemo(() => {
-    const pts: any[] = [];
 
-    // Uçaklar (Mavi - her zaman göster, renderı performanslı)
-    (flights || []).forEach(f => {
-      pts.push({ lat: f.lat, lng: f.lng, altitude: 0.01, color: '#38bdf8', radius: zoomLevel < 250 ? 0.3 : 0.15 });
-    });
-
-    // Uydular (Beyaz)
+  // === 3D RENDER LİSTESİ (Sadece Global Olaylar, Uçuşlar Kaldırıldı) ===
+  const objectsData = useMemo(() => {
+    const data: any[] = [];
+    // Uçuşlar (displayFlights) 3D ekrandan kaldırıldı.
     (satellites || []).forEach(s => {
-      if (s.lat != null && s.lng != null) {
-        pts.push({ lat: s.lat, lng: s.lng, altitude: s.alt || 0.08, color: '#e2e8f0', radius: 0.06 });
+      if (s.lat != null && s.lng != null) data.push({ ...s, __type: 'satellite' });
+    });
+    if (iss) data.push({ ...iss, id: 'iss-unique-id', __type: 'iss' });
+    return data;
+  }, [satellites, iss]);
+
+  const objectThreeObject = (d: any) => {
+    let group: THREE.Group;
+
+    if (d.__type === 'iss') {
+      group = new THREE.Group();
+      const truss = new THREE.Mesh(issTrussGeom, issMat);
+      truss.rotation.z = Math.PI / 2;
+      group.add(truss);
+      const pMat = new THREE.MeshBasicMaterial({ color: '#fbbf24', side: THREE.DoubleSide });
+      for (let x of [-1.5, -0.6, 0.6, 1.5]) {
+        for (let z of [1, -1]) {
+          const p = new THREE.Mesh(issPanelGeom, pMat);
+          p.position.set(x, 0, z); p.rotation.x = Math.PI / 2;
+          group.add(p);
+        }
       }
-    });
-
-    // Tor Düğümleri (Mor - yakınlaşınca)
-    if (zoomLevel < 350) {
-      (torNodes || []).forEach(n => {
-        if (n.lat && n.lng) pts.push({ lat: n.lat, lng: n.lng, altitude: 0.005, color: '#a855f7', radius: 0.1 });
-      });
-    }
-
-    return pts;
-  }, [flights, satellites, torNodes, zoomLevel]);
-
-  // === KRİPTO BALINAKLARI ===
-  const arcsData = useMemo(() => {
-    return (cryptoWhales || []).map(w => ({
-      startLat: w.startLat, startLng: w.startLng, endLat: w.endLat, endLng: w.endLng,
-      color: '#fbbf24', altitude: 0.4, stroke: 1.5
-    }));
-  }, [cryptoWhales]);
-
-  // === HTML İŞARETÇİLER (ISS + Haberler) ===
-  const htmlData = useMemo(() => {
-    const list: any[] = [];
-    if (iss) list.push({ lat: iss.lat, lng: iss.lng, type: 'iss', label: 'UKS (ISS)' });
-    (newsEvents || []).forEach(n => {
-      list.push({ lat: n.lat, lng: n.lng, type: 'news', label: n.title?.slice(0, 30) + '...' });
-    });
-    return list;
-  }, [iss, newsEvents]);
-
-  const renderHtmlElement = (d: any) => {
-    const el = document.createElement('div');
-    if (d.type === 'iss') {
-      el.innerHTML = `<div style="background:white;border-radius:4px;padding:2px 6px;box-shadow:0 0 15px #fff;border:1px solid #38bdf8;font:bold 9px monospace;color:#000;white-space:nowrap;">${d.label}</div>`;
+      group.scale.set(1.8, 1.8, 1.8);
     } else {
-      el.innerHTML = `<div style="width:8px;height:8px;background:#ef4444;border-radius:50%;box-shadow:0 0 12px #ef4444;"></div>`;
+      group = new THREE.Group();
+      const body = new THREE.Mesh(satGeom, satMat);
+      group.add(body);
+      const p1 = new THREE.Mesh(satPanelGeom, satPanelMat);
+      p1.position.x = 0.65; p1.rotation.y = Math.PI/4;
+      group.add(p1);
+      const p2 = new THREE.Mesh(satPanelGeom, satPanelMat);
+      p2.position.x = -0.65; p2.rotation.y = -Math.PI/4;
+      group.add(p2);
     }
-    return el;
+
+    return group;
   };
 
+  const ringsData = useMemo(() => {
+    const rings: any[] = [];
+    (earthquakes || []).forEach(q => rings.push({ lat: q.lat, lng: q.lng, maxR: Math.max(q.mag * 2, 2), propagationSpeed: 2, repeatPeriod: 800, color: 'rgba(245, 158, 11, 0.7)' }));
+    (newsEvents || []).forEach(n => { if (n.lat && n.lng) rings.push({ lat: n.lat, lng: n.lng, maxR: 3, propagationSpeed: 1, repeatPeriod: 2000, color: 'rgba(239, 68, 68, 0.8)' }); });
+    return rings;
+  }, [earthquakes, newsEvents]);
+
+  const pathsData = useMemo(() => {
+    return (satellites || []).filter(s => s.path && s.path.length > 0).map(s => ({
+      coords: s.path?.map(p => [p.lat, p.lng]),
+      color: 'rgba(255, 255, 255, 0.1)'
+    }));
+  }, [satellites]);
+
   return (
-    <div style={{ position: 'absolute', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: 1 }}>
+    <div style={{ position: 'absolute', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: 1, overflow: 'hidden' }}>
       <Globe
         ref={globeRef}
         width={dimensions.width}
         height={dimensions.height}
         globeImageUrl="//unpkg.com/three-globe/example/img/earth-night.jpg"
-        bumpImageUrl="//unpkg.com/three-globe/example/img/earth-topology.png"
         backgroundColor="#000000"
         showAtmosphere={true}
         atmosphereColor="#4fc3f7"
-        atmosphereAltitude={0.18}
-
+        atmosphereAltitude={0.15}
         ringsData={ringsData}
         ringColor="color"
         ringMaxRadius="maxR"
-        ringPropagationSpeed="propagationSpeed"
-        ringRepeatPeriod="repeatPeriod"
-
-        pointsData={pointsData}
-        pointColor="color"
-        pointAltitude="altitude"
-        pointRadius="radius"
-        pointsMerge={false}
-        pointTransitionDuration={9000}
-
-        arcsData={arcsData}
-        arcColor="color"
-        arcDashLength={0.4}
-        arcDashGap={0.2}
-        arcDashAnimateTime={800}
-        arcAltitude="altitude"
-        arcStroke="stroke"
-
-        htmlElementsData={htmlData}
-        htmlElement={renderHtmlElement}
-        htmlAltitude={(d: any) => d.type === 'iss' ? 0.35 : 0.03}
+        objectsData={objectsData}
+        objectThreeObject={objectThreeObject}
+        objectAltitude={(d: any) => d.__type === 'flight' ? 0.007 : d.__type === 'iss' ? 0.2 : (d.alt || 0.12)}
+        objectTransitionDuration={0} // Manuel mutasyon için kütüphane animasyonunu kapat
+        onObjectClick={(obj: any) => {
+          setSelectedFlight(null); setSelectedSatellite(null); setSelectedISS(false);
+          if (obj.__type === 'flight') setSelectedFlight(obj);
+          if (obj.__type === 'satellite') setSelectedSatellite(obj);
+          if (obj.__type === 'iss') setSelectedISS(true);
+        }}
+        pathsData={pathsData}
+        pathPoints="coords"
+        pathColor="color"
+        pathStroke={0.3}
+        onGlobeClick={() => { setSelectedFlight(null); setSelectedSatellite(null); setSelectedISS(false); }}
       />
+
+      <div style={{ position: 'absolute', bottom: '150px', left: '26rem', zIndex: 100, display: 'flex', gap: '8px' }}>
+        <button onClick={() => setIsRotating(!isRotating)} style={{ background: 'rgba(15, 23, 42, 0.9)', border: '1px solid rgba(56, 189, 248, 0.4)', borderRadius: '12px', padding: '10px 18px', display: 'flex', alignItems: 'center', gap: '8px', color: '#fff', cursor: 'pointer', backdropFilter: 'blur(8px)', font: 'bold 10px monospace' }}>
+          {isRotating ? <Pause size={14} /> : <Play size={14} />} {isRotating ? 'DÖNÜŞÜ DURDUR' : 'DÖNÜŞÜ BAŞLAT'}
+        </button>
+      </div>
+
+      <div style={{ position: 'absolute', top: '100px', left: '26rem', display: 'flex', flexDirection: 'column', gap: '16px', zIndex: 100, pointerEvents: 'none' }}>
+        {selectedFlight && (
+          <div className="intel-card" style={{ pointerEvents: 'auto', background: 'rgba(15, 23, 42, 0.85)', backdropFilter: 'blur(12px)', border: '1px solid #facc15', borderRadius: '12px', padding: '16px', width: '280px', boxShadow: '0 8px 32px rgba(0,0,0,0.5)', animation: 'slideRight 0.3s ease-out' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
+              <div><div style={{ fontSize: '0.6rem', color: '#facc15', fontWeight: 'bold' }}>UÇUŞ İSTİHBARATI</div><div style={{ fontSize: '1.2rem', fontWeight: 'bold' }}>{selectedFlight.callsign}</div></div>
+              <button onClick={() => setSelectedFlight(null)} style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer' }}><X size={16} /></button>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+              <DataBlock label="TİP" value={selectedFlight.type} icon={<PlaneIcon size={10}/>} />
+              <DataBlock label="HIZ" value={`${Math.round(selectedFlight.speed || 0)} kt`} icon={<Gauge size={10}/>} color="#facc15" />
+              <DataBlock label="ROTA" value={`${Math.round(selectedFlight.heading || 0)}°`} icon={<Navigation size={10}/>} />
+              <DataBlock label="İRTİFA" value={`${selectedFlight.alt} ft`} icon={<Rocket size={10}/>} />
+            </div>
+          </div>
+        )}
+      </div>
+
+      <style>{`
+        @keyframes slideRight { from { opacity: 0; transform: translateX(-20px); } to { opacity: 1; transform: translateX(0); } }
+      `}</style>
+    </div>
+  );
+}
+
+function DataBlock({ label, value, icon, color = "#fff" }: any) {
+  return (
+    <div style={{ background: 'rgba(255,255,255,0.03)', padding: '8px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.05)' }}>
+      <div style={{ fontSize: '0.55rem', color: '#94a3b8', marginBottom: '2px', display: 'flex', alignItems: 'center', gap: '4px' }}>{icon} {label}</div>
+      <div style={{ fontSize: '0.85rem', fontWeight: 'bold', color }}>{value || '---'}</div>
     </div>
   );
 }
