@@ -21,9 +21,10 @@ export const fetchEarthquakes = async () => {
 
 export const fetchFlights = async () => {
   try {
-    // OpenSky imposes harsh rate limits and CORS blocks for massive global queries without accounts.
-    // Wrap with allorigins to bypass CORS and caching to reduce 429 blocks.
-    const response = await fetch('https://api.allorigins.win/get?url=' + encodeURIComponent('https://opensky-network.org/api/states/all'));
+    // OpenSky imposes harsh rate limits for global queries.
+    // Let's use a bounding box for Europe+Asia to drastically reduce payload size (makes it fast and bypasses 429 limits mostly).
+    const boundUrl = 'https://opensky-network.org/api/states/all?lamin=35.0&lomin=-10.0&lamax=60.0&lomax=40.0';
+    const response = await fetch('https://api.allorigins.win/get?url=' + encodeURIComponent(boundUrl));
     if (!response.ok) return;
     
     const wrapper = await response.json();
