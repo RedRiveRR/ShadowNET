@@ -140,7 +140,7 @@ interface MetricsState {
   selectedFlight: Flight | null;
   selectedSatellite: Satellite | null;
   selectedISS: boolean;
-  activeView: 'GLOBE' | 'RADAR';
+  activeView: 'GLOBE' | 'RADAR' | 'MARITIME';
   apiStatus: {
     activeProvider: string; // "OPENSKY", "ADSBFİ" vb.
     providers: ProviderStatus[];
@@ -149,7 +149,7 @@ interface MetricsState {
   };
   
   setEarthquakes: (quakes: Earthquake[]) => void;
-  setActiveView: (view: 'GLOBE' | 'RADAR') => void;
+  setActiveView: (view: 'GLOBE' | 'RADAR' | 'MARITIME') => void;
   setFlights: (flights: Flight[]) => void;
   setCryptoWhales: (whales: CryptoWhale[]) => void;
   addCryptoWhale: (whale: CryptoWhale) => void;

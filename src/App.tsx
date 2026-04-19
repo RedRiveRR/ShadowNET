@@ -7,8 +7,9 @@ import RightPanel from './components/RightPanel';
 import BottomDrawer from './components/BottomDrawer';
 import Legend from './components/Legend';
 import { startDataStreams } from './services/api';
-import { Globe as GlobeIcon, Crosshair } from 'lucide-react';
+import { Globe as GlobeIcon, Crosshair, Ship } from 'lucide-react';
 import ErrorBoundary from './components/ErrorBoundary';
+import MaritimeMap2D from './components/MaritimeMap2D';
 import './App.css';
 function App() {
   const isStarted = useRef(false);
@@ -32,6 +33,12 @@ function App() {
           <GlobeIcon size={14} /> GLOBAL ANALYTICS
         </button>
         <button 
+          onClick={() => setActiveView('MARITIME')}
+          style={{ padding: '8px 20px', borderRadius: '8px', border: 'none', background: activeView === 'MARITIME' ? '#22d3ee' : 'transparent', color: activeView === 'MARITIME' ? '#000' : '#94a3b8', cursor: 'pointer', transition: 'all 0.3s', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold', fontSize: '0.75rem' }}
+        >
+          <Ship size={14} /> MARITIME RADAR
+        </button>
+        <button 
           onClick={() => setActiveView('RADAR')}
           style={{ padding: '8px 20px', borderRadius: '8px', border: 'none', background: activeView === 'RADAR' ? '#facc15' : 'transparent', color: activeView === 'RADAR' ? '#000' : '#94a3b8', cursor: 'pointer', transition: 'all 0.3s', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold', fontSize: '0.75rem' }}
         >
@@ -48,6 +55,10 @@ function App() {
           
           <Legend />
           <BottomDrawer />
+        </ErrorBoundary>
+      ) : activeView === 'MARITIME' ? (
+        <ErrorBoundary>
+          <MaritimeMap2D />
         </ErrorBoundary>
       ) : (
         <ErrorBoundary>

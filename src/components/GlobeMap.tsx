@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import Globe from 'react-globe.gl';
 import * as THREE from 'three';
 import { useMetricsStore } from '../store/useMetricsStore';
-import { Navigation, Rocket, Zap, Crosshair, Play, Pause, X, ExternalLink, Database, Activity } from 'lucide-react';
+import { Navigation, Rocket, Zap, Crosshair, Play, Pause, X, ExternalLink } from 'lucide-react';
 
 // === PAYLAŞILAN 3D KAYNAKLAR ===
 
@@ -23,8 +23,7 @@ export default function GlobeMap() {
     setSelectedFlight,
     selectedSatellite, setSelectedSatellite,
     selectedISS, setSelectedISS,
-    threatAlerts, aiStatus,
-    vessels, selectedVessel, setSelectedVessel
+    threatAlerts, aiStatus
   } = useMetricsStore();
   
   const [isRotating, setIsRotating] = useState(true);
@@ -191,13 +190,8 @@ export default function GlobeMap() {
       ...n, size: 0.5, color: '#ef4444', __type: 'news'
     })).filter(p => p.lat != null && p.lng != null);
 
-    // 4. Gemi (Maritime) Noktaları (V10.0)
-    const vesselPoints = (vessels || []).map(v => ({
-      ...v, size: 0.4, color: '#2dd4bf', __type: 'vessel'
-    }));
-
-    return [...intelPoints, ...threatPoints, ...quakePoints, ...newsPoints, ...vesselPoints];
-  }, [threatAlerts, earthquakes, newsEvents, intelEvents, vessels]);
+    return [...intelPoints, ...threatPoints, ...quakePoints, ...newsPoints];
+  }, [threatAlerts, earthquakes, newsEvents, intelEvents]);
 
 
   return (
@@ -234,17 +228,12 @@ export default function GlobeMap() {
         onPointClick={(pt: any) => {
           setSelectedFlight(null);
           setSelectedSatellite(null);
-          setSelectedISS(false);
-          setSelectedThreat(null);
-          setSelectedEarthquake(null);
           setSelectedNews(null);
-          setSelectedVessel(null);
           setSelectedIntel(null);
 
           if (pt.__type === 'threat') setSelectedThreat(pt);
           if (pt.__type === 'earthquake') setSelectedEarthquake(pt);
           if (pt.__type === 'news') setSelectedNews(pt);
-          if (pt.__type === 'vessel') setSelectedVessel(pt);
           if (pt.__type === 'intel') setSelectedIntel(pt);
         }}
         onGlobeClick={() => { 
@@ -254,7 +243,7 @@ export default function GlobeMap() {
           setSelectedThreat(null);
           setSelectedEarthquake(null);
           setSelectedNews(null);
-          setSelectedVessel(null);
+          setSelectedNews(null);
           setSelectedIntel(null);
         }}
       />
@@ -436,23 +425,6 @@ export default function GlobeMap() {
           </div>
         )}
 
-        {selectedVessel && (
-          <div className="intel-card" style={{ pointerEvents: 'auto', background: 'rgba(15, 23, 42, 0.85)', backdropFilter: 'blur(12px)', border: '1px solid #2dd4bf', borderRadius: '12px', padding: '16px', width: '280px', boxShadow: '0 8px 32px rgba(45, 212, 191, 0.2)', animation: 'slideRight 0.3s ease-out' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
-              <div><div style={{ fontSize: '0.6rem', color: '#2dd4bf', fontWeight: 'bold' }}>MARITIME ASSET</div><div style={{ fontSize: '1.2rem', fontWeight: 'bold', color: '#fff' }}>{selectedVessel.name.slice(0, 15)}</div></div>
-              <button onClick={() => setSelectedVessel(null)} style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer' }}><X size={16} /></button>
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-              <DataBlock label="MMSI" value={selectedVessel.mmsi} icon={<Database size={10}/>} color="#2dd4bf" />
-              <DataBlock label="SPEED" value={`${selectedVessel.speed} kn`} icon={<Zap size={10}/>} />
-              <DataBlock label="COURSE" value={`${selectedVessel.course}°`} icon={<Navigation size={10}/>} />
-              <DataBlock label="LAST SEE" value={new Date(selectedVessel.lastUpdate).toLocaleTimeString()} icon={<Activity size={10}/>} />
-            </div>
-            <div style={{ marginTop: '10px', fontSize: '0.65rem', color: '#94a3b8', background: 'rgba(0,0,0,0.2)', padding: '6px', borderRadius: '4px' }}>
-              FLAG: {selectedVessel.flag} // AIS STREAM: POSITION_REPORT
-            </div>
-          </div>
-        )}
       </div>
 
       <style>{`

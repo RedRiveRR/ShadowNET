@@ -3,9 +3,42 @@ import { useMetricsStore, type Vessel } from '../store/useMetricsStore';
 class AISService {
   private socket: WebSocket | null = null;
   private reconnectTimeout: any = null;
+  private vesselCache = new Map<string, Vessel>();
+  private flushInterval: any = null;
 
   start() {
     this.connect();
+    this.startFlushInterval();
+  }
+
+  private startFlushInterval() {
+    if (this.flushInterval) clearInterval(this.flushInterval);
+    
+    // Flush updates to store every 1000ms to prevent flickering
+    this.flushInterval = setInterval(() => {
+      this.flushBuffer();
+    }, 1000);
+  }
+
+  private flushBuffer() {
+    const { setVessels } = useMetricsStore.getState();
+    const now = Date.now();
+    const TTL_MS = 10 * 60 * 1000; // 10 minutes
+
+    // 1. Cleanup stale vessels from cache
+    for (const [id, v] of this.vesselCache.entries()) {
+      if (now - v.lastUpdate > TTL_MS) {
+        this.vesselCache.delete(id);
+      }
+    }
+
+    // 2. Conver Map to Array and Limit if needed (up to 2000 for stability)
+    const updatedArray = Array.from(this.vesselCache.values())
+      .sort((a, b) => b.lastUpdate - a.lastUpdate)
+      .slice(0, 2000);
+
+    // 3. Update store only if count or data significant (or just do it every sec)
+    setVessels(updatedArray);
   }
 
   private connect() {
@@ -52,36 +85,24 @@ class AISService {
       const vessel: Vessel = {
         id: `vessel-${MetaData.MMSI}`,
         mmsi: MetaData.MMSI,
-        name: MetaData.VesselName.trim() || `Vessel ${MetaData.MMSI}`,
+        name: (MetaData.ShipName || '').trim() || `Vessel ${MetaData.MMSI}`,
         lat: MetaData.latitude,
         lng: MetaData.longitude,
-        speed: Message.Sog || 0,
-        course: Message.Cog || 0,
-        type: 'General', // Simplified for now
-        flag: 'Unknown',
+        speed: Message.PositionReport.Sog || 0,
+        course: Message.PositionReport.Cog || 0,
+        type: 'General', 
+        flag: (MetaData.Flag || 'Unknown'),
         lastUpdate: Date.now()
       };
 
-      this.updateStore(vessel);
-    }
-  }
-
-  private updateStore(vessel: Vessel) {
-    const { vessels, setVessels } = useMetricsStore.getState();
-    const index = vessels.findIndex(v => v.id === vessel.id);
-    
-    if (index > -1) {
-      const updated = [...vessels];
-      updated[index] = { ...vessels[index], ...vessel };
-      setVessels(updated);
-    } else {
-      // Limit total vessels to 200 for performance
-      setVessels([...vessels.slice(-199), vessel]);
+      // Update internal cache only, don't trigger store/react yet
+      this.vesselCache.set(vessel.id, vessel);
     }
   }
 
   stop() {
     if (this.reconnectTimeout) clearTimeout(this.reconnectTimeout);
+    if (this.flushInterval) clearInterval(this.flushInterval);
     if (this.socket) this.socket.close();
   }
 }

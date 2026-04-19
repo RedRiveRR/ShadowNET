@@ -10,7 +10,7 @@ export default function BottomDrawer() {
 
   const { 
     securityAlerts, earthquakes, newsEvents, cryptoWhales, 
-    torNodes, intelEvents, threatAlerts, aiStatus, vessels 
+    torNodes, intelEvents, threatAlerts, aiStatus 
   } = useMetricsStore();
 
   const handleReboot = async (e: React.MouseEvent) => {
@@ -62,7 +62,7 @@ export default function BottomDrawer() {
       <div style={{ flex: 1, display: isOpen ? 'flex' : 'none', padding: '0.8rem', gap: '0.8rem', overflow: 'hidden' }}>
         
         {/* 0. AI INTELLIGENCE (GDELT + Sentiment) */}
-        <div style={{ flex: 1.5, display: 'flex', flexDirection: 'column', border: '1px solid rgba(34, 197, 94, 0.3)', borderRadius: '4px', background: 'rgba(0,0,0,0.5)' }}>
+        <div style={{ flex: 1.5, minWidth: 0, display: 'flex', flexDirection: 'column', border: '1px solid rgba(34, 197, 94, 0.3)', borderRadius: '4px', background: 'rgba(0,0,0,0.5)' }}>
           <div style={{ padding: '0.6rem', borderBottom: '1px solid rgba(34, 197, 94, 0.3)', display: 'flex', alignItems: 'center', gap: '8px' }}>
             <Brain color="#22c55e" size={16} />
             <h3 style={{ color: '#22c55e', fontSize: '0.85rem', flex: 1 }}>AI INTELLIGENCE</h3>
@@ -77,7 +77,7 @@ export default function BottomDrawer() {
           </div>
           <div className="no-scrollbar" style={{ flex: 1, overflowY: 'auto', padding: '0.5rem' }}>
             {intelEvents.length === 0 && <p style={{ color: 'var(--text-secondary)', fontSize: '0.7rem' }}>GDELT istihbaratı yükleniyor...</p>}
-            {intelEvents.map((article, i) => {
+            {Array.from(new Map(intelEvents.map(item => [item.title.trim().toLowerCase(), item])).values()).map((article, i) => {
               const id = `intel-${article.id}-${i}`;
               const isThreat = threatAlerts.some(t => t.id === `threat-${article.id}`);
               const topicColors: Record<string, string> = {
@@ -115,7 +115,7 @@ export default function BottomDrawer() {
         </div>
 
         {/* 1. KÜRESEL HABERLER */}
-        <div style={{ flex: 1.5, display: 'flex', flexDirection: 'column', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '4px', background: 'rgba(0,0,0,0.5)' }}>
+        <div style={{ flex: 1.5, minWidth: 0, display: 'flex', flexDirection: 'column', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '4px', background: 'rgba(0,0,0,0.5)' }}>
           <div style={{ padding: '0.6rem', borderBottom: '1px solid rgba(239,68,68,0.3)', display: 'flex', alignItems: 'center', gap: '8px' }}>
             <Newspaper color="#ef4444" size={16} />
             <h3 style={{ color: '#ef4444', fontSize: '0.85rem' }}>KÜRESEL HABERLER (SON DAKİKA)</h3>
@@ -144,7 +144,7 @@ export default function BottomDrawer() {
         </div>
 
         {/* 2. SİBER ALTYAPI */}
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', border: '1px solid rgba(168,85,247,0.3)', borderRadius: '4px', background: 'rgba(0,0,0,0.5)' }}>
+        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', border: '1px solid rgba(168,85,247,0.3)', borderRadius: '4px', background: 'rgba(0,0,0,0.5)' }}>
           <div style={{ padding: '0.6rem', borderBottom: '1px solid rgba(168,85,247,0.3)', display: 'flex', alignItems: 'center', gap: '8px' }}>
             <Zap color="#a855f7" size={16} />
             <h3 style={{ color: '#a855f7', fontSize: '0.85rem' }}>SİBER ALTYAPI & TOR</h3>
@@ -207,7 +207,7 @@ export default function BottomDrawer() {
         </div>
 
         {/* 3. KRİPTO TRANSFERLERİ */}
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', border: '1px solid rgba(234,179,8,0.3)', borderRadius: '4px', background: 'rgba(0,0,0,0.5)' }}>
+        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', border: '1px solid rgba(234,179,8,0.3)', borderRadius: '4px', background: 'rgba(0,0,0,0.5)' }}>
           <div style={{ padding: '0.6rem', borderBottom: '1px solid rgba(234,179,8,0.3)', display: 'flex', alignItems: 'center', gap: '8px' }}>
             <Bitcoin color="#fbbf24" size={16} />
             <h3 style={{ color: '#fbbf24', fontSize: '0.85rem' }}>KRİPTO TRANSFERLERİ</h3>
@@ -239,7 +239,7 @@ export default function BottomDrawer() {
         </div>
 
         {/* 4. SİSMİK KAYITLAR */}
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', border: '1px solid rgba(245,158,11,0.3)', borderRadius: '4px', background: 'rgba(0,0,0,0.5)' }}>
+        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', border: '1px solid rgba(245,158,11,0.3)', borderRadius: '4px', background: 'rgba(0,0,0,0.5)' }}>
           <div style={{ padding: '0.6rem', borderBottom: '1px solid rgba(245,158,11,0.3)', display: 'flex', alignItems: 'center', gap: '8px' }}>
             <Activity color="#f59e0b" size={16} />
             <h3 style={{ color: '#f59e0b', fontSize: '0.85rem' }}>SİSMİK KAYITLAR</h3>
@@ -262,36 +262,6 @@ export default function BottomDrawer() {
                       <a href={`https://earthquake.usgs.gov/earthquakes/eventpage/${q.id}`} target="_blank" rel="noreferrer" style={{ fontSize: '0.65rem', color: '#f59e0b', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
                         USGS Raporu <ExternalLink size={9} />
                       </a>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* 5. MARİTİME (AIS Stream) */}
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', border: '1px solid rgba(45, 212, 191, 0.3)', borderRadius: '4px', background: 'rgba(0,0,0,0.5)' }}>
-          <div style={{ padding: '0.6rem', borderBottom: '1px solid rgba(45, 212, 191, 0.3)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <Activity color="#2dd4bf" size={16} />
-            <h3 style={{ color: '#2dd4bf', fontSize: '0.85rem' }}>MARITIME ENERGETICS</h3>
-          </div>
-          <div className="no-scrollbar" style={{ flex: 1, overflowY: 'auto', padding: '0.5rem' }}>
-            {vessels.length === 0 && <p style={{ color: 'var(--text-secondary)', fontSize: '0.7rem' }}>AIS verisi bekleniyor...</p>}
-            {vessels.slice(0, 30).map((v, i) => {
-              const id = `vessel-draw-${v.id}-${i}`;
-              return (
-                <div key={id} onClick={() => toggle(id)} style={{ cursor: 'pointer', padding: '5px 6px', marginBottom: '2px', borderRadius: '4px', background: expandedId === id ? 'rgba(45,212,191,0.1)' : 'transparent', borderLeft: expandedId === id ? '2px solid #2dd4bf' : '2px solid transparent', transition: 'all 0.2s' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                     <span style={{ fontSize: '0.72rem', color: 'var(--text-primary)', fontWeight: 'bold' }}>{v.name.slice(0, 18)}</span>
-                     <span style={{ fontSize: '0.6rem', color: '#2dd4bf' }}>{v.speed} kn</span>
-                  </div>
-                  {expandedId === id && (
-                    <div style={{ marginTop: '4px', padding: '4px', background: 'rgba(0,0,0,0.3)', borderRadius: '4px' }}>
-                      <p style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', marginBottom: '3px' }}>
-                        <strong>MMSI:</strong> {v.mmsi} · <strong>Rota:</strong> {v.course}° · <strong>Konum:</strong> {v.lat.toFixed(2)}, {v.lng.toFixed(2)}
-                      </p>
-                      <span style={{ fontSize: '0.65rem', color: '#2dd4bf' }}>AIS POSITION_REPORT_SOURCE</span>
                     </div>
                   )}
                 </div>
