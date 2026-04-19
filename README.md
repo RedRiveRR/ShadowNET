@@ -18,33 +18,31 @@ ShadowNet V8.0, standart "her kullanıcı için ayrı API sorgusu" mantığını
 
 ```mermaid
 graph TD
-    subgraph DataSources["Data Sources"]
-        O([OpenSky / API Auth])
-        A([Airplanes.Live])
-        B([ADSB.one])
+    subgraph DataSources["Data Sources (External APIs)"]
+        O[OpenSky API]
+        A[Airplanes.Live]
+        B[ADSB.one]
     end
 
-    subgraph ServerSide["Server-Side (Vite Proxy)"]
-        M{Master Data Hub}
-        F[Failover & Cooldown Engine]
-        C1(Global Cache)
+    subgraph ServerSide["Sovereign Server (Proxy)"]
+        F(Failover & Cooldown Engine)
+        M[(Master Data Hub & Cache)]
     end
 
-    subgraph ClientSide["Client-Side (Browser)"]
-        U1[User 1: Global View]
-        U2[User 2: Regional View]
-        P[Autonomous Physics Engine<br>Dead Reckoning]
+    subgraph ClientSide["ShadowNet Clients"]
+        U1(Regional View: Europe)
+        U2(Regional View: Asia)
+        P{{Autonomous Physics Engine}}
     end
 
-    O -->|Primary 90s Pulse| F
-    A -.->|Backup 1| F
-    B -.->|Backup 2| F
+    O ==>|Primary 90s Pulse| F
+    A -.->|Backup Fallback| F
+    B -.->|Backup Fallback| F
     
-    F --> M
-    M -->|Updates| C1
+    F -->|Raw Feed Aggregation| M
     
-    C1 -->|On-the-fly Filtering| U1
-    C1 -->|On-the-fly Filtering| U2
+    M ==>|On-the-fly Filtering| U1
+    M ==>|On-the-fly Filtering| U2
 
     U1 --> P
     U2 --> P
