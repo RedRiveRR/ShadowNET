@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useMemo } from 'react';
 import Globe from 'react-globe.gl';
 import * as THREE from 'three';
 import { useMetricsStore } from '../store/useMetricsStore';
-import { Navigation, Rocket, Zap, Crosshair, Play, Pause, X } from 'lucide-react';
+import { Navigation, Rocket, Zap, Crosshair, Play, Pause, X, ExternalLink } from 'lucide-react';
 
 // === PAYLAŞILAN 3D KAYNAKLAR ===
 
@@ -22,10 +22,14 @@ export default function GlobeMap() {
     iss, satellites, earthquakes, newsEvents,
     setSelectedFlight,
     selectedSatellite, setSelectedSatellite,
-    selectedISS, setSelectedISS
+    selectedISS, setSelectedISS,
+    threatAlerts, aiStatus
   } = useMetricsStore();
   
   const [isRotating, setIsRotating] = useState(true);
+  const [selectedThreat, setSelectedThreat] = useState<any>(null);
+  const [selectedEarthquake, setSelectedEarthquake] = useState<any>(null);
+  const [selectedNews, setSelectedNews] = useState<any>(null);
 
 
 
@@ -91,8 +95,34 @@ export default function GlobeMap() {
     const rings: any[] = [];
     (earthquakes || []).forEach(q => rings.push({ lat: q.lat, lng: q.lng, maxR: Math.max(q.mag * 2, 2), propagationSpeed: 2, repeatPeriod: 800, color: 'rgba(245, 158, 11, 0.7)' }));
     (newsEvents || []).forEach(n => { if (n.lat && n.lng) rings.push({ lat: n.lat, lng: n.lng, maxR: 3, propagationSpeed: 1, repeatPeriod: 2000, color: 'rgba(239, 68, 68, 0.8)' }); });
+
+    // V9.0: AI Tehdit Halkaları
+    // Koordinat haritası: topic -> yaklaşık bölge merkezi
+    const topicCoords: Record<string, { lat: number; lng: number }> = {
+      military:      { lat: 35.0, lng: 39.0 },   // Orta Doğu
+      cyber:         { lat: 39.9, lng: 116.4 },   // Pekin
+      nuclear:       { lat: 35.7, lng: 51.4 },    // Tahran
+      sanctions:     { lat: 55.7, lng: 37.6 },    // Moskova
+      intelligence:  { lat: 38.9, lng: -77.0 },   // Washington DC
+      maritime:      { lat: 10.0, lng: 114.0 },    // Güney Çin Denizi
+    };
+    (threatAlerts || []).forEach(t => {
+      const coords = topicCoords[t.topicId];
+      if (coords) {
+        rings.push({
+          ...t, // Orijinal veriyi taşı (tıklama için)
+          lat: coords.lat,
+          lng: coords.lng,
+          maxR: Math.max(t.severity * 8, 3),
+          propagationSpeed: 3,
+          repeatPeriod: 600,
+          color: `rgba(239, 68, 68, ${Math.min(t.severity, 0.95)})`,
+        });
+      }
+    });
+
     return rings;
-  }, [earthquakes, newsEvents]);
+  }, [earthquakes, newsEvents, threatAlerts]);
 
   const pathsData = useMemo(() => {
     return (satellites || []).filter(s => s.path && s.path.length > 0).map(s => ({
@@ -100,6 +130,36 @@ export default function GlobeMap() {
       color: 'rgba(255, 255, 255, 0.1)'
     }));
   }, [satellites]);
+
+  // V9.1: Tıklama yakalamak için görünmez/yarı-saydam noktalar
+  const pointsData = useMemo(() => {
+    const topicCoords: Record<string, { lat: number; lng: number }> = {
+      military:      { lat: 35.0, lng: 39.0 },
+      cyber:         { lat: 39.9, lng: 116.4 },
+      nuclear:       { lat: 35.7, lng: 51.4 },
+      sanctions:     { lat: 55.7, lng: 37.6 },
+      intelligence:  { lat: 38.9, lng: -77.0 },
+      maritime:      { lat: 10.0, lng: 114.0 },
+    };
+
+    // 1. Tehdit Noktaları
+    const threatPoints = (threatAlerts || []).map(t => {
+      const coords = topicCoords[t.topicId];
+      return { ...t, lat: coords?.lat || 0, lng: coords?.lng || 0, size: 0.6, color: '#ef4444', __type: 'threat' };
+    }).filter(p => p.lat !== 0);
+
+    // 2. Deprem Noktaları
+    const quakePoints = (earthquakes || []).map(q => ({
+      ...q, size: 0.8, color: '#facc15', __type: 'earthquake'
+    }));
+
+    // 3. Haber Noktaları
+    const newsPoints = (newsEvents || []).map(n => ({
+      ...n, size: 0.5, color: '#ef4444', __type: 'news'
+    })).filter(p => p.lat != null && p.lng != null);
+
+    return [...threatPoints, ...quakePoints, ...newsPoints];
+  }, [threatAlerts, earthquakes, newsEvents]);
 
   return (
     <div style={{ position: 'absolute', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: 1, overflow: 'hidden' }}>
@@ -128,13 +188,61 @@ export default function GlobeMap() {
         pathPoints="coords"
         pathColor="color"
         pathStroke={0.3}
-        onGlobeClick={() => { setSelectedFlight(null); setSelectedSatellite(null); setSelectedISS(false); }}
+        pointsData={pointsData}
+        pointColor="color"
+        pointRadius="size"
+        pointAltitude={0.01}
+        onPointClick={(pt: any) => {
+          setSelectedFlight(null);
+          setSelectedSatellite(null);
+          setSelectedISS(false);
+          setSelectedThreat(null);
+          setSelectedEarthquake(null);
+          setSelectedNews(null);
+
+          if (pt.__type === 'threat') setSelectedThreat(pt);
+          if (pt.__type === 'earthquake') setSelectedEarthquake(pt);
+          if (pt.__type === 'news') setSelectedNews(pt);
+        }}
+        onGlobeClick={() => { 
+          setSelectedFlight(null); 
+          setSelectedSatellite(null); 
+          setSelectedISS(false); 
+          setSelectedThreat(null);
+          setSelectedEarthquake(null);
+          setSelectedNews(null);
+        }}
       />
 
       <div style={{ position: 'absolute', bottom: '150px', left: '26rem', zIndex: 100, display: 'flex', gap: '8px' }}>
         <button onClick={() => setIsRotating(!isRotating)} style={{ background: 'rgba(15, 23, 42, 0.9)', border: '1px solid rgba(56, 189, 248, 0.4)', borderRadius: '12px', padding: '10px 18px', display: 'flex', alignItems: 'center', gap: '8px', color: '#fff', cursor: 'pointer', backdropFilter: 'blur(8px)', font: 'bold 10px monospace' }}>
           {isRotating ? <Pause size={14} /> : <Play size={14} />} {isRotating ? 'DÖNÜŞÜ DURDUR' : 'DÖNÜŞÜ BAŞLAT'}
         </button>
+      </div>
+
+      {/* V9.0: AI Durum Göstergesi */}
+      <div style={{
+        position: 'absolute', top: '20px', right: '26rem', zIndex: 100,
+        background: 'rgba(15, 23, 42, 0.9)', backdropFilter: 'blur(12px)',
+        border: `1px solid ${aiStatus === 'ready' ? 'rgba(34, 197, 94, 0.5)' : aiStatus === 'processing' ? 'rgba(234, 179, 8, 0.5)' : aiStatus === 'error' ? 'rgba(239, 68, 68, 0.5)' : 'rgba(100, 116, 139, 0.3)'}`,
+        borderRadius: '12px', padding: '10px 16px', font: 'bold 10px monospace', color: '#94a3b8'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <div style={{
+            width: '8px', height: '8px', borderRadius: '50%',
+            background: aiStatus === 'ready' ? '#22c55e' : aiStatus === 'processing' ? '#eab308' : aiStatus === 'loading' ? '#3b82f6' : aiStatus === 'error' ? '#ef4444' : '#475569',
+            boxShadow: aiStatus === 'ready' ? '0 0 8px #22c55e' : aiStatus === 'processing' ? '0 0 8px #eab308' : 'none',
+            animation: (aiStatus === 'loading' || aiStatus === 'processing') ? 'pulse 1.5s infinite' : 'none'
+          }} />
+          <span style={{ color: '#e2e8f0', letterSpacing: '1px' }}>
+            AI ENGINE: {aiStatus === 'ready' ? 'OPERATIONAL' : aiStatus === 'loading' ? 'LOADING MODEL...' : aiStatus === 'processing' ? 'ANALYZING...' : aiStatus === 'error' ? 'OFFLINE' : 'STANDBY'}
+          </span>
+        </div>
+        {threatAlerts.length > 0 && (
+          <div style={{ marginTop: '6px', color: '#ef4444', fontSize: '9px' }}>
+            ⚠ {threatAlerts.length} THREAT{threatAlerts.length > 1 ? 'S' : ''} DETECTED
+          </div>
+        )}
       </div>
 
       <div style={{ position: 'absolute', top: '100px', left: '26rem', display: 'flex', flexDirection: 'column', gap: '16px', zIndex: 100, pointerEvents: 'none' }}>
@@ -164,6 +272,94 @@ export default function GlobeMap() {
               <DataBlock label="ALTITUDE" value={`${Math.round(iss.altitude || 408)} km`} icon={<Rocket size={10}/>} />
               <DataBlock label="LATITUDE" value={`${iss.lat?.toFixed(4)}°`} icon={<Crosshair size={10}/>} />
               <DataBlock label="LONGITUDE" value={`${iss.lng?.toFixed(4)}°`} icon={<Crosshair size={10}/>} />
+            </div>
+          </div>
+        )}
+
+        {selectedThreat && (
+          <div className="intel-card" style={{ 
+            pointerEvents: 'auto', 
+            background: 'rgba(127, 29, 29, 0.85)', 
+            backdropFilter: 'blur(12px)', 
+            border: '1px solid #ef4444', 
+            borderRadius: '12px', 
+            padding: '16px', 
+            width: '320px', 
+            boxShadow: '0 8px 32px rgba(239, 68, 68, 0.3)', 
+            animation: 'slideRight 0.3s ease-out' 
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
+              <div>
+                <div style={{ fontSize: '0.6rem', color: '#fca5a5', fontWeight: 'bold', letterSpacing: '1px' }}>
+                  AI THREAT IDENTIFIED: {selectedThreat.topicId.toUpperCase()}
+                </div>
+                <div style={{ fontSize: '1rem', fontWeight: 'bold', color: '#fff', marginTop: '4px', lineHeight: '1.4' }}>
+                  {selectedThreat.title}
+                </div>
+              </div>
+              <button 
+                onClick={() => setSelectedThreat(null)} 
+                style={{ background: 'transparent', border: 'none', color: '#fecaca', cursor: 'pointer' }}>
+                <X size={16} />
+              </button>
+            </div>
+            
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '12px' }}>
+              <div style={{ background: 'rgba(0,0,0,0.2)', padding: '8px', borderRadius: '6px' }}>
+                <div style={{ fontSize: '0.6rem', color: '#fca5a5' }}>RISK SCORE</div>
+                <div style={{ fontSize: '0.9rem', fontWeight: 'bold', color: '#ef4444' }}>%{Math.round(selectedThreat.severity * 100)}</div>
+              </div>
+              <div style={{ background: 'rgba(0,0,0,0.2)', padding: '8px', borderRadius: '6px' }}>
+                <div style={{ fontSize: '0.6rem', color: '#fca5a5' }}>TIMESTAMP</div>
+                <div style={{ fontSize: '0.7rem', fontWeight: 'bold', color: '#fff' }}>
+                  {new Date(selectedThreat.time).toLocaleTimeString()}
+                </div>
+              </div>
+            </div>
+            
+            <div style={{ 
+              marginTop: '12px', 
+              fontSize: '0.65rem', 
+              color: '#fecaca', 
+              fontStyle: 'italic',
+              borderTop: '1px solid rgba(239, 68, 68, 0.2)',
+              paddingTop: '8px'
+            }}>
+              Autonomous analysis performed by local ONNX engine. Severity level constitutes a critical anomalous baseline.
+            </div>
+          </div>
+        )}
+
+        {selectedEarthquake && (
+          <div className="intel-card" style={{ pointerEvents: 'auto', background: 'rgba(15, 23, 42, 0.85)', backdropFilter: 'blur(12px)', border: '1px solid #facc15', borderRadius: '12px', padding: '16px', width: '280px', boxShadow: '0 8px 32px rgba(0,0,0,0.5)', animation: 'slideRight 0.3s ease-out' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
+              <div><div style={{ fontSize: '0.6rem', color: '#facc15', fontWeight: 'bold' }}>SEISMIC ACTIVITY</div><div style={{ fontSize: '1rem', fontWeight: 'bold', color: '#fff' }}>Magnitude {selectedEarthquake.mag}</div></div>
+              <button onClick={() => setSelectedEarthquake(null)} style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer' }}><X size={16} /></button>
+            </div>
+            <div style={{ fontSize: '0.75rem', color: '#cbd5e1', marginBottom: '12px' }}>{selectedEarthquake.title}</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+              <DataBlock label="LATITUDE" value={`${selectedEarthquake.lat?.toFixed(2)}°`} icon={<Crosshair size={10}/>} />
+              <DataBlock label="LONGITUDE" value={`${selectedEarthquake.lng?.toFixed(2)}°`} icon={<Crosshair size={10}/>} />
+              <DataBlock label="TIME" value={new Date(selectedEarthquake.time).toLocaleTimeString()} icon={<Zap size={10}/>} />
+              <DataBlock label="DEPTH" value="N/A" icon={<Navigation size={10}/>} />
+            </div>
+          </div>
+        )}
+
+        {selectedNews && (
+          <div className="intel-card" style={{ pointerEvents: 'auto', background: 'rgba(15, 23, 42, 0.85)', backdropFilter: 'blur(12px)', border: '1px solid #ef4444', borderRadius: '12px', padding: '16px', width: '300px', boxShadow: '0 8px 32px rgba(0,0,0,0.5)', animation: 'slideRight 0.3s ease-out' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
+              <div><div style={{ fontSize: '0.6rem', color: '#ef4444', fontWeight: 'bold' }}>GLOBAL INCIDENT</div><div style={{ fontSize: '0.9rem', fontWeight: 'bold', color: '#fff' }}>{selectedNews.source}</div></div>
+              <button onClick={() => setSelectedNews(null)} style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer' }}><X size={16} /></button>
+            </div>
+            <div style={{ fontSize: '0.8rem', color: '#fff', marginBottom: '12px', lineHeight: '1.4' }}>{selectedNews.title}</div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '10px' }}>
+              <span style={{ fontSize: '0.6rem', color: '#94a3b8' }}>{new Date(selectedNews.time).toLocaleString()}</span>
+              {selectedNews.url && (
+                <a href={selectedNews.url} target="_blank" rel="noreferrer" style={{ fontSize: '0.7rem', color: '#38bdf8', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  Detaya Git <ExternalLink size={10} />
+                </a>
+              )}
             </div>
           </div>
         )}

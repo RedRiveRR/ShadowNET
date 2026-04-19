@@ -89,6 +89,28 @@ export interface ProviderStatus {
   status: 'OK' | 'ERR' | 'WAIT';
 }
 
+export interface IntelArticle {
+  id: string;
+  topicId: string;
+  title: string;
+  url: string;
+  source: string;
+  date: string;
+  tone: number;
+  sentimentScore?: number;  // AI tarafından atanan puan (0-1)
+  sentimentLabel?: 'positive' | 'negative';  // AI etiketi
+}
+
+export interface ThreatAlert {
+  id: string;
+  title: string;
+  topicId: string;
+  severity: number;  // 0-1 arası AI güven skoru
+  lat?: number;
+  lng?: number;
+  time: number;
+}
+
 interface MetricsState {
   earthquakes: Earthquake[];
   flights: Flight[];
@@ -127,6 +149,14 @@ interface MetricsState {
   setSelectedSatellite: (sat: Satellite | null) => void;
   setSelectedISS: (open: boolean) => void;
   setApiStatus: (status: MetricsState['apiStatus']) => void;
+
+  // V9.0 Intel
+  intelEvents: IntelArticle[];
+  threatAlerts: ThreatAlert[];
+  aiStatus: 'idle' | 'loading' | 'ready' | 'processing' | 'error';
+  setIntelEvents: (events: IntelArticle[]) => void;
+  addThreatAlert: (alert: ThreatAlert) => void;
+  setAiStatus: (status: MetricsState['aiStatus']) => void;
 }
 
 export const useMetricsStore = create<MetricsState>((set) => ({
@@ -184,4 +214,15 @@ export const useMetricsStore = create<MetricsState>((set) => ({
   setSelectedSatellite: (sat) => set({ selectedSatellite: sat }),
   setSelectedISS: (open) => set({ selectedISS: open }),
   setApiStatus: (status) => set({ apiStatus: status }),
+
+  // V9.0 Intel
+  intelEvents: [],
+  threatAlerts: [],
+  aiStatus: 'idle',
+  setIntelEvents: (events) => set({ intelEvents: events }),
+  addThreatAlert: (alert) =>
+    set((state) => ({
+      threatAlerts: [alert, ...state.threatAlerts].slice(0, 50),
+    })),
+  setAiStatus: (status) => set({ aiStatus: status }),
 }));

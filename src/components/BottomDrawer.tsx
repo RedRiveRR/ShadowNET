@@ -1,12 +1,12 @@
 import { useState } from 'react';
 import { useMetricsStore } from '../store/useMetricsStore';
-import { ChevronUp, ChevronDown, Newspaper, Zap, Bitcoin, ExternalLink, Activity } from 'lucide-react';
+import { ChevronUp, ChevronDown, Newspaper, Zap, Bitcoin, ExternalLink, Activity, Brain } from 'lucide-react';
 
 export default function BottomDrawer() {
   const [isOpen, setIsOpen] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
-  const { securityAlerts, earthquakes, newsEvents, cryptoWhales, torNodes } = useMetricsStore();
+  const { securityAlerts, earthquakes, newsEvents, cryptoWhales, torNodes, intelEvents, threatAlerts, aiStatus } = useMetricsStore();
 
   const toggle = (id: string) => setExpandedId(expandedId === id ? null : id);
 
@@ -27,6 +27,68 @@ export default function BottomDrawer() {
 
       <div style={{ flex: 1, display: isOpen ? 'flex' : 'none', padding: '0.8rem', gap: '0.8rem', overflow: 'hidden' }}>
         
+        {/* 0. AI INTELLIGENCE (GDELT + Sentiment) */}
+        <div style={{ flex: 1.5, display: 'flex', flexDirection: 'column', border: '1px solid rgba(34, 197, 94, 0.3)', borderRadius: '4px', background: 'rgba(0,0,0,0.5)' }}>
+          <div style={{ padding: '0.6rem', borderBottom: '1px solid rgba(34, 197, 94, 0.3)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <Brain color="#22c55e" size={16} />
+            <h3 style={{ color: '#22c55e', fontSize: '0.85rem', flex: 1 }}>AI INTELLIGENCE</h3>
+            <div style={{
+              fontSize: '0.6rem', padding: '2px 8px', borderRadius: '10px',
+              background: aiStatus === 'ready' ? 'rgba(34,197,94,0.2)' : aiStatus === 'processing' ? 'rgba(234,179,8,0.2)' : 'rgba(100,116,139,0.2)',
+              color: aiStatus === 'ready' ? '#22c55e' : aiStatus === 'processing' ? '#eab308' : '#94a3b8',
+              fontWeight: 'bold', letterSpacing: '0.5px'
+            }}>
+              {aiStatus === 'ready' ? 'ONLINE' : aiStatus === 'processing' ? 'SCANNING' : aiStatus === 'loading' ? 'LOADING' : 'IDLE'}
+            </div>
+          </div>
+          <div className="no-scrollbar" style={{ flex: 1, overflowY: 'auto', padding: '0.5rem' }}>
+            {intelEvents.length === 0 && <p style={{ color: 'var(--text-secondary)', fontSize: '0.7rem' }}>GDELT istihbaratı yükleniyor...</p>}
+            {intelEvents.slice(0, 20).map((article, i) => {
+              const id = `intel-${article.id}-${i}`;
+              const isThreat = threatAlerts.some(t => t.id === `threat-${article.id}`);
+              const topicColors: Record<string, string> = {
+                military: '#ef4444', cyber: '#a855f7', nuclear: '#f59e0b',
+                sanctions: '#3b82f6', intelligence: '#06b6d4', maritime: '#22d3ee'
+              };
+              const color = topicColors[article.topicId] || '#94a3b8';
+              return (
+                <div key={id} onClick={() => toggle(id)} style={{
+                  cursor: 'pointer', padding: '5px 8px', marginBottom: '3px', borderRadius: '4px',
+                  background: isThreat ? 'rgba(239,68,68,0.1)' : expandedId === id ? 'rgba(34,197,94,0.08)' : 'transparent',
+                  borderLeft: isThreat ? '2px solid #ef4444' : expandedId === id ? '2px solid #22c55e' : '2px solid transparent',
+                  transition: 'all 0.2s'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{ fontSize: '0.6rem', color, fontWeight: 'bold', flexShrink: 0 }}>[{article.topicId.toUpperCase()}]</span>
+                    <span style={{ fontSize: '0.72rem', color: 'var(--text-primary)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{article.title}</span>
+                    {article.sentimentScore !== undefined && (
+                      <span style={{
+                        fontSize: '0.55rem', padding: '1px 6px', borderRadius: '8px', flexShrink: 0,
+                        background: article.sentimentLabel === 'negative' ? 'rgba(239,68,68,0.2)' : 'rgba(34,197,94,0.2)',
+                        color: article.sentimentLabel === 'negative' ? '#fca5a5' : '#86efac',
+                        fontWeight: 'bold'
+                      }}>
+                        {article.sentimentLabel === 'negative' ? '⚠' : '✓'} {Math.round(article.sentimentScore * 100)}%
+                      </span>
+                    )}
+                  </div>
+                  {expandedId === id && (
+                    <div style={{ marginTop: '6px', padding: '6px', background: 'rgba(0,0,0,0.3)', borderRadius: '4px' }}>
+                      <p style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', marginBottom: '4px' }}>
+                        <strong>Kaynak:</strong> {article.source} · <strong>Tarih:</strong> {article.date}
+                        {article.sentimentScore !== undefined && (<> · <strong>AI Skoru:</strong> <span style={{ color: article.sentimentLabel === 'negative' ? '#ef4444' : '#22c55e' }}>{Math.round(article.sentimentScore * 100)}% {article.sentimentLabel}</span></>)}
+                      </p>
+                      <a href={article.url} target="_blank" rel="noreferrer" style={{ fontSize: '0.65rem', color: '#22c55e', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                        Kaynağa Git <ExternalLink size={9} />
+                      </a>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
         {/* 1. KÜRESEL HABERLER */}
         <div style={{ flex: 1.5, display: 'flex', flexDirection: 'column', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '4px', background: 'rgba(0,0,0,0.5)' }}>
           <div style={{ padding: '0.6rem', borderBottom: '1px solid rgba(239,68,68,0.3)', display: 'flex', alignItems: 'center', gap: '8px' }}>

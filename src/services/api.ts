@@ -1,5 +1,7 @@
 import { useMetricsStore } from '../store/useMetricsStore';
 import type { Flight, Satellite, NewsEvent, TorNode } from '../store/useMetricsStore';
+import type { IntelArticle } from '../store/useMetricsStore';
+import { initMLWorker, analyzeIntelSentiment } from './ml-manager';
 import * as satellite from 'satellite.js';
 
 // === DEPREMLER ===
@@ -307,6 +309,47 @@ export const connectCryptoWebSocket = () => {
   } catch (e) {}
 };
 
+// === GDELT İSTİHBARAT VERİSİ ===
+export const fetchIntelEvents = async () => {
+  try {
+    const response = await fetch('/api/data/intel');
+    if (response.ok) {
+      const data = await response.json();
+      const allArticles: IntelArticle[] = [];
+
+      if (data.topics && Array.isArray(data.topics)) {
+        for (const topic of data.topics) {
+          if (topic.articles && Array.isArray(topic.articles)) {
+            for (const article of topic.articles) {
+              allArticles.push({
+                id: `intel-${topic.id}-${allArticles.length}`,
+                topicId: topic.id,
+                title: article.title || '',
+                url: article.url || '',
+                source: article.source || '',
+                date: article.date || '',
+                tone: article.tone || 0,
+              });
+            }
+          }
+        }
+      }
+
+      useMetricsStore.getState().setIntelEvents(allArticles);
+      console.log(`[Intel] ${allArticles.length} makale yüklendi, AI analizine gönderiliyor...`);
+
+      // Yapay Zeka Duygu Analizi
+      if (allArticles.length > 0) {
+        analyzeIntelSentiment(allArticles).catch((e) =>
+          console.warn('[Intel] AI analiz hatası:', e)
+        );
+      }
+    }
+  } catch (e) {
+    console.error('[Intel] GDELT Hatası:', e);
+  }
+};
+
 // === SİSTEM BAŞLATICI ===
 export const startDataStreams = () => {
   fetchEarthquakes();
@@ -339,5 +382,10 @@ export const startDataStreams = () => {
   setInterval(() => {
     if (!binanceWs || binanceWs.readyState === WebSocket.CLOSED) connectCryptoWebSocket();
   }, 5000);
+
+  // V9.0: ML Worker ve İstihbarat Akışı
+  initMLWorker();
+  fetchIntelEvents();
+  setInterval(fetchIntelEvents, 900000); // 15 dakikada bir
 };
 

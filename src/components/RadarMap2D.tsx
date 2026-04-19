@@ -797,11 +797,11 @@ export default function RadarMap2D() {
         </div>
       </div>
 
-        {/* TACTICAL LEGEND (Sağ Alt) */}
+        {/* TACTICAL LEGEND (Sol Üst) */}
         <div style={{ 
           position: 'absolute', 
-          bottom: '100px', 
-          right: '40px', 
+          top: '80px', 
+          left: '20px', 
           zIndex: 1000, 
           padding: '12px', 
           background: 'rgba(15,23,42,0.9)', 
@@ -811,7 +811,7 @@ export default function RadarMap2D() {
           fontFamily: 'monospace',
           fontSize: '0.65rem',
           boxShadow: '0 4px 20px rgba(0,0,0,0.6)',
-          animation: 'slideUp 0.5s ease'
+          animation: 'slideRight 0.5s ease'
         }}>
           <div style={{ color: '#38bdf8', marginBottom: '8px', fontWeight: 'bold', borderBottom: '1px solid rgba(56, 189, 248, 0.1)', paddingBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
             Tactical Identifiers
@@ -831,6 +831,7 @@ export default function RadarMap2D() {
             </div>
           </div>
         </div>
+
 
       <style>{`
         @keyframes slideRight { from { opacity: 0; transform: translateX(-20px); } to { opacity: 1; transform: translateX(0); } }

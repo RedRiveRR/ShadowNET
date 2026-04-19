@@ -10,7 +10,8 @@ const caches: any = {
   flights: { data: { ac: [] }, lastFetch: 0 },
   satellites: { data: [], lastFetch: 0 },
   tor: { data: [], lastFetch: 0 },
-  news: { data: [], lastFetch: 0 }
+  news: { data: [], lastFetch: 0 },
+  intel: { data: { topics: [] }, lastFetch: 0 }
 };
 
 // --- OpenSky OAuth2 Token Management ---
@@ -251,7 +252,72 @@ const shadowProxyPlugin = () => ({
       res.end(JSON.stringify({ result: null }));
     });
 
-    // 6. AlienVault OTX (CORS bypass)
+    // 6. GDELT Intelligence Feed (Jeopolitik İstihbarat)
+    const GDELT_API = 'https://api.gdeltproject.org/api/v2/doc/doc';
+    const INTEL_TOPICS = [
+      { id: 'military',     query: '(military exercise OR troop deployment OR airstrike) sourcelang:eng' },
+      { id: 'cyber',        query: '(cyberattack OR ransomware OR hacking OR "data breach") sourcelang:eng' },
+      { id: 'nuclear',      query: '(nuclear OR uranium enrichment OR IAEA) sourcelang:eng' },
+      { id: 'sanctions',    query: '(sanctions OR embargo OR "trade war" OR tariff) sourcelang:eng' },
+      { id: 'intelligence', query: '(espionage OR spy OR "intelligence agency" OR surveillance) sourcelang:eng' },
+      { id: 'maritime',     query: '(naval blockade OR piracy OR "strait of hormuz" OR warship) sourcelang:eng' },
+    ];
+
+    server.middlewares.use('/api/data/intel', async (_req: any, res: any) => {
+      const now = Date.now();
+      const INTEL_TTL = 900000; // 15 dakika
+
+      if (now - caches.intel.lastFetch > INTEL_TTL) {
+        console.log('[Proxy] Fetching GDELT Intelligence...');
+        const topicResults: any[] = [];
+
+        for (const topic of INTEL_TOPICS) {
+          try {
+            const url = new URL(GDELT_API);
+            url.searchParams.set('query', topic.query);
+            url.searchParams.set('mode', 'artlist');
+            url.searchParams.set('maxrecords', '10');
+            url.searchParams.set('format', 'json');
+            url.searchParams.set('sort', 'date');
+            url.searchParams.set('timespan', '24h');
+
+            const response = await fetch(url.toString(), {
+              headers: { 'User-Agent': 'ShadowNet/9.0 IntelHub' }
+            });
+
+            if (response.ok) {
+              const data = (await response.json()) as any;
+              const articles = (data.articles || []).slice(0, 10).map((a: any) => ({
+                title: String(a.title || '').slice(0, 300),
+                url: a.url || '',
+                source: String(a.domain || '').slice(0, 100),
+                date: a.seendate || '',
+                tone: typeof a.tone === 'number' ? a.tone : 0,
+                language: a.language || 'English',
+                image: a.socialimage || '',
+              }));
+              topicResults.push({ id: topic.id, articles, fetchedAt: new Date().toISOString() });
+            } else {
+              topicResults.push({ id: topic.id, articles: [], fetchedAt: new Date().toISOString() });
+            }
+          } catch (e) {
+            console.error(`[Proxy] GDELT ${topic.id} Error:`, e);
+            topicResults.push({ id: topic.id, articles: [], fetchedAt: new Date().toISOString() });
+          }
+          // GDELT rate limit koruması: Her topic arasında 500ms bekle
+          await new Promise(r => setTimeout(r, 500));
+        }
+
+        caches.intel.data = { topics: topicResults, fetchedAt: new Date().toISOString() };
+        caches.intel.lastFetch = now;
+        console.log(`[Proxy] GDELT: ${topicResults.reduce((s: number, t: any) => s + t.articles.length, 0)} articles across ${topicResults.length} topics`);
+      }
+
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify(caches.intel.data));
+    });
+
+    // 7. AlienVault OTX (CORS bypass)
     server.middlewares.use('/api/data/otx', async (_req: any, res: any) => {
       try {
         const response = await fetch('https://otx.alienvault.com/api/v1/pulses/subscribed?limit=5', {
