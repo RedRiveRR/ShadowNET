@@ -323,7 +323,7 @@ export const startDataStreams = () => {
   setInterval(() => {
     const bounds = useMetricsStore.getState().apiStatus.currentBounds;
     fetchFlights(bounds || undefined);
-  }, 12000); // 12 saniyelik VIP Pulse hızı (Proxy'nin 15s cache süresiyle uyumlu)
+  }, 10000); // 10 saniyede bir proxy'den (Master Hub) filtrelenmiş veriyi çek
   setInterval(fetchISS, 3000);
   setInterval(fetchSatellites, 300000);
   setInterval(fetchNews, 120000);

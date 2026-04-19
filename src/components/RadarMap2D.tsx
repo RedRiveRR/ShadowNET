@@ -34,7 +34,8 @@ interface GhostFlight {
   isGhost: boolean;
 }
 
-const GHOST_LIFETIME_MS = 2 * 60 * 1000; // 2 dakika - senkronizasyon kaybında temizlik süresi
+const GHOST_LIFETIME_MS = 10 * 60 * 1000; // 10 dakika - Haritadan tamamen silinme süresi
+const LIVE_TIMEOUT_MS = 6 * 60 * 1000;   // 6 dakika (4 x 90s Scan) - Hayalet moduna geçiş süresi
 
 export default function RadarMap2D() {
 
@@ -325,12 +326,21 @@ export default function RadarMap2D() {
       
       // Görsel pozisyonları güncelle (Smooth Lerp — doğrudan API konumuna akıcı geçiş)
       for (const [id, ghost] of ghostMap.entries()) {
+        const timeSinceSeen = now - ghost.lastSeen;
+
         if (!liveIds.has(id)) {
-          ghost.isGhost = true;
-          if (now - ghost.lastSeen > GHOST_LIFETIME_MS) {
+          // Hemen ghost yapma, 4 tur (6 dk) bekle
+          if (timeSinceSeen > LIVE_TIMEOUT_MS) {
+            ghost.isGhost = true;
+          }
+          
+          // 10 dakika sonunda tamamen sil
+          if (timeSinceSeen > GHOST_LIFETIME_MS) {
             ghostMap.delete(id);
             continue;
           }
+        } else {
+          ghost.isGhost = false; // Veri geldiyse ghostluğu her zaman kaldır
         }
         
         // API konumuna doğru akıcı kayma (0.05/kare = ~1.5 saniyede %95 ulaşır)
@@ -422,8 +432,16 @@ export default function RadarMap2D() {
           ctx.fillText(`${Math.round(ghost.alt / 100)}FL · ${Math.round(ghost.speed)}kt`, screenX, screenY + 28);
           if (ghost.isGhost) {
             ctx.fillStyle = '#ef4444';
-            ctx.font = 'bold 8px monospace';
-            ctx.fillText('GHOST TRACK', screenX, screenY + 38);
+            ctx.font = 'bold 9px monospace';
+            ctx.fillText('⚠️ GHOST TRACK', screenX, screenY + 38);
+            
+            // Simüle edilmiş bir "parazit" çizgisi ekle
+            ctx.strokeStyle = 'rgba(239, 68, 68, 0.5)';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(screenX - 15, screenY + 42);
+            ctx.lineTo(screenX + 15, screenY + 42);
+            ctx.stroke();
           }
           ctx.restore();
         }
@@ -529,6 +547,12 @@ export default function RadarMap2D() {
               )}
               {apiStatus.activeProvider.includes('ERROR') ? '⚠️ OFFLINE' : `📡 ${apiStatus.activeProvider}`}
             </div>
+            
+            {/* NEXT SCAN COUNTER */}
+            <div style={{ fontSize: '0.6rem', color: '#38bdf8', marginTop: '2px', fontFamily: 'monospace' }}>
+              SCAN CYCLE: 90s [LIVE]
+            </div>
+
             {apiStatus.remainingCredits !== null && apiStatus.activeProvider === 'OPENSKY' && (
               <div style={{ fontSize: '0.6rem', color: '#22c55e', marginTop: '2px' }}>
                 ⛽ CREDITS: {apiStatus.remainingCredits.toLocaleString()} / 4000
@@ -773,10 +797,46 @@ export default function RadarMap2D() {
         </div>
       </div>
 
+        {/* TACTICAL LEGEND (Sağ Alt) */}
+        <div style={{ 
+          position: 'absolute', 
+          bottom: '100px', 
+          right: '40px', 
+          zIndex: 1000, 
+          padding: '12px', 
+          background: 'rgba(15,23,42,0.9)', 
+          border: '1px solid rgba(56, 189, 248, 0.3)', 
+          borderRadius: '8px',
+          backdropFilter: 'blur(12px)',
+          fontFamily: 'monospace',
+          fontSize: '0.65rem',
+          boxShadow: '0 4px 20px rgba(0,0,0,0.6)',
+          animation: 'slideUp 0.5s ease'
+        }}>
+          <div style={{ color: '#38bdf8', marginBottom: '8px', fontWeight: 'bold', borderBottom: '1px solid rgba(56, 189, 248, 0.1)', paddingBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+            Tactical Identifiers
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <div style={{ width: 0, height: 0, borderLeft: '4px solid transparent', borderRight: '4px solid transparent', borderBottom: '8px solid #facc15' }} />
+              <span style={{ color: '#cbd5e1' }}>AERIAL ENTITY (LIVE)</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <div style={{ width: 0, height: 0, borderLeft: '4px solid transparent', borderRight: '4px solid transparent', borderBottom: '8px solid #94a3b8', opacity: 0.6 }} />
+              <span style={{ color: '#94a3b8' }}>GHOST TRACK (PREDICTED)</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <div style={{ width: '8px', height: '8px', background: '#22c55e', borderRadius: '50%', boxShadow: '0 0 5px #22c55e' }} />
+              <span style={{ color: '#cbd5e1' }}>VIP SOURCE ENCRYPTED</span>
+            </div>
+          </div>
+        </div>
+
       <style>{`
         @keyframes slideRight { from { opacity: 0; transform: translateX(-20px); } to { opacity: 1; transform: translateX(0); } }
-        @keyframes slideUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
         @keyframes sonarPing { 75%, 100% { transform: scale(3); opacity: 0;} }
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
       `}</style>
     </div>
   );

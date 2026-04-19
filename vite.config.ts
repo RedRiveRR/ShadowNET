@@ -57,13 +57,10 @@ async function getOpenSkyToken() {
 const shadowProxyPlugin = () => ({
   name: 'shadow-proxy',
   configureServer(server: any) {
-// --- API Cooldown Management ---
-const apiCooldowns: Record<string, number> = {};
+    // --- API Cooldown Management ---
+    const apiCooldowns: Record<string, number> = {};
 
-const shadowProxyPlugin = () => ({
-  name: 'shadow-proxy',
-  configureServer(server: any) {
-    // 1. Uçuşlar (OAuth2 VIP + Multi-Source + Cooldown + Shared Cache)
+    // 1. Uçuşlar (Sovereign Master Data Hub Mimarisi)
     server.middlewares.use('/api/data/flights', async (req: any, res: any) => {
       const now = Date.now();
       const url = new URL(req.url, `http://${req.headers.host}`);
@@ -72,89 +69,79 @@ const shadowProxyPlugin = () => ({
       const lamax = url.searchParams.get('lamax');
       const lomax = url.searchParams.get('lomax');
 
-      const cacheKey = lamin ? `${lamin}_${lomin}_${lamax}_${lomax}` : 'global';
+      // MASTER HUB STRATEJİSİ:
+      // Her zaman Global Cache üzerinden çalış. Eğer Global yoksa veya eskiyse çek.
+      // Bu sayede 100 kullanıcı farklı yerlere baksa bile OpenSky'a sadece 1 Global istek gider.
+      const GLOBAL_TTL = 90000; // 90 Saniye (4000 Kredi / 4 = 1000 istek/gün garantisi)
       
-      const providers = [
-        { name: 'OPENSKY', url: 'https://opensky-network.org/api/states/all', type: 'opensky', auth: true },
-        { name: 'AIRPLANES', url: 'https://api.airplanes.live/v2/all', type: 'adsb', auth: false },
-        { name: 'ADSBONE', url: 'https://api.adsb.one/v2/all', type: 'adsb', auth: false },
-        { name: 'ADSBLOL', url: 'https://api.adsb.lol/v2/all', type: 'adsb', auth: false }
-      ];
-
-      const ttl = lamin ? 15000 : 30000;
-
-      if (!caches.flights[cacheKey] || now - caches.flights[cacheKey].lastFetch > ttl) {
+      if (!caches.flights.global || now - caches.flights.global.lastFetch > GLOBAL_TTL) {
         let success = false;
         const providerReport: any[] = [];
         const token = await getOpenSkyToken();
+        const providers = [
+          { name: 'OPENSKY', url: 'https://opensky-network.org/api/states/all', auth: true },
+          { name: 'AIRPLANES', url: 'https://api.airplanes.live/v2/all', auth: false },
+          { name: 'ADSBONE', url: 'https://api.adsb.one/v2/all', auth: false }
+        ];
 
         for (const p of providers) {
-          // Cooldown Kontrolü: Eğer API 5 dakikadan kısa süre önce hata verdiyse atla
-          if (apiCooldowns[p.name] && now - apiCooldowns[p.name] < 300000) {
-            providerReport.push({ name: p.name, status: 'COOLDOWN' });
-            continue;
-          }
+          if (apiCooldowns[p.name] && now - apiCooldowns[p.name] < 300 * 1000) continue;
 
           try {
-            let fetchUrl = p.url;
-            if (p.name === 'OPENSKY' && lamin) {
-              fetchUrl += `?lamin=${lamin}&lomin=${lomin}&lamax=${lamax}&lomax=${lomax}`;
-            }
+            console.log(`[MasterHub] Fetching NEW Global State from ${p.name}...`);
+            const headers: any = { 'User-Agent': 'Mozilla/5.0 ShadowNet/8.0 MasterHub' };
+            if (p.auth && token) headers['Authorization'] = `Bearer ${token}`;
 
-            const controller = new AbortController();
-            const timeout = setTimeout(() => controller.abort(), 8000); 
-
-            const headers: any = { 
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-            };
-
-            if (p.auth && token) {
-              headers['Authorization'] = `Bearer ${token}`;
-            }
-
-            const response = await fetch(fetchUrl, { headers, signal: controller.signal });
-            clearTimeout(timeout);
-
+            const response = await fetch(p.url, { headers });
             if (response.ok) {
               const rawData = await response.json();
-              const remainingCredits = response.headers.get('X-Rate-Limit-Remaining');
-
-              caches.flights[cacheKey] = {
-                data: { 
-                  ...rawData, 
-                  _source: p.name, 
-                  _credits: remainingCredits ? parseInt(remainingCredits) : null,
-                  _timestamp: now,
-                  _report: providerReport,
-                  _is_regional: !!lamin
-                },
+              const credits = response.headers.get('X-Rate-Limit-Remaining');
+              
+              caches.flights.global = {
+                data: { ...rawData, _source: p.name, _credits: credits ? parseInt(credits) : null },
                 lastFetch: now
               };
               success = true;
-              delete apiCooldowns[p.name]; // Hata bittiyse cooldown'dan çıkar
-              break; 
-            } else {
-              apiCooldowns[p.name] = now; // Hata veren API'yi soğumaya al
-              providerReport.push({ name: p.name, status: 'ERR', code: response.status });
-            }
-          } catch (e: any) {
-            apiCooldowns[p.name] = now;
-            providerReport.push({ name: p.name, status: 'ERR', msg: e.message });
-          }
+              delete apiCooldowns[p.name];
+              break;
+            } else { apiCooldowns[p.name] = now; }
+          } catch (e) { apiCooldowns[p.name] = now; }
         }
 
-        if (!success) {
-          if (!caches.flights[cacheKey]) {
-             caches.flights[cacheKey] = { 
-               data: { ac: [], _simulated: true, _source: 'SIMULATED', _report: providerReport }, 
-               lastFetch: now 
-             };
-          }
+        if (!success && !caches.flights.global) {
+          // Hiç veri yoksa boş bir global cache oluştur
+          caches.flights.global = { data: { ac: [], _simulated: true, _source: 'SIMULATED' }, lastFetch: now };
         }
       }
 
+      // --- ON-THE-FLY FILTERING ---
+      // İstek bölgesel ise Master Cache'den süzüp gönder
+      let responseData = { ...caches.flights.global.data };
+
+      if (lamin && lomin && lamax && lomax) {
+        const blamin = parseFloat(lamin); const blomin = parseFloat(lomin);
+        const blamax = parseFloat(lamax); const blomax = parseFloat(lomax);
+
+        // OpenSky Formatı Filtrele
+        if (responseData.states) {
+          responseData.states = responseData.states.filter((s: any) => 
+            s[6] >= blamin && s[6] <= blamax && s[5] >= blomin && s[5] <= blomax
+          );
+        }
+        // ADSB Formatı Filtrele
+        if (responseData.ac || responseData.aircraft) {
+          const list = responseData.ac || responseData.aircraft;
+          const filtered = list.filter((ac: any) => 
+            ac.lat >= blamin && ac.lat <= blamax && ac.lon >= blomin && ac.lon <= blomax
+          );
+          if (responseData.ac) responseData.ac = filtered;
+          else responseData.aircraft = filtered;
+        }
+        responseData._is_regional = true;
+      }
+
       res.setHeader('Content-Type', 'application/json');
-      res.end(JSON.stringify(caches.flights[cacheKey].data));
+      res.end(JSON.stringify(responseData));
     });
 
     // 2. Uydular (CelesTrak TLE satırları - Uzay İstasyonları grubu)
@@ -287,4 +274,4 @@ const shadowProxyPlugin = () => ({
 
 export default defineConfig({
   plugins: [react(), shadowProxyPlugin()],
-})
+});
