@@ -4,73 +4,143 @@
 [![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)](LICENSE)
 [![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?style=for-the-badge&logo=docker)](docker-compose.yml)
 [![Status](https://img.shields.io/badge/Status-Tactical_Active-success?style=for-the-badge)](https://opensky-network.org/)
+[![React](https://img.shields.io/badge/Engine-React%20%2B%20Vite-61DAFB?style=for-the-badge)](https://vitejs.dev/)
 
-**ShadowNet**, 3D topolojik bir küre ve 2D taktik radardan oluşan, **Master Data Hub** mimarisine sahip profesyonel bir OSINT (Açık Kaynak İstihbarat) platformudur. V8.0 ile birlikte "Sovereign Proxy" ve "Otonom Fizik Motoru" entegre edilerek kredi sınırlamalarına takılmayan, 24 saat kesintisiz izleme kapasitesine sahip bir canavara dönüştürülmüştür.
+**ShadowNet**, siber güvenlik istihbaratını (OSINT), küresel kriz olaylarını, uydu yörüngelerini ve canlı hava sahası trafiğini tek bir çatı altında birleştiren, yüksek performanslı ve taktiksel bir komuta-kontrol platformudur. 
+
+V8.0 ile birlikte entegre edilen **Master Data Hub** ve **Otonom Fizik Motoru (Dead Reckoning)** sayesinde ShadowNet, API limitlerinden tamamen bağımsız, 24 saat kesintisiz ve "banlanamaz" bir mimariye kavuşmuştur.
 
 ---
 
-## 🏗️ Technical Architecture (Master Data Hub)
+## 🚀 Mimarinin Kalbi: Sovereign Master Hub
 
-ShadowNet, OpenSky VIP kredilerini korumak ve IP ban riskini sıfıra indirmek için merkezi bir senkronizasyon mimarisi kullanır.
+ShadowNet V8.0, standart "her kullanıcı için ayrı API sorgusu" mantığını tarihe gömer. Bunun yerine sunucu tabanlı, tekil bir **Master Proxy** kullanır.
 
 ```mermaid
 graph TD
-    A[OpenSky VIP / OAuth2] -->|90s Pulse| B(Sovereign Master Proxy)
-    C[Airplanes.Live / ADSB.one] -->|Failover| B
-    B -->|Global Cache| D{Master Data Hub}
-    D -->|Regional Filtering| E[User A: Europe View]
-    D -->|Regional Filtering| F[User B: Middle East View]
-    E -->|Dead Reckoning| G[Autonomous Physics Engine]
-    F -->|Dead Reckoning| G
+    subgraph Data Sources
+        O([OpenSky VIP / OAuth2])
+        A([Airplanes.Live])
+        B([ADSB.one])
+        C([ADSB.lol])
+    end
+
+    subgraph Server-Side (Vite Proxy)
+        M{Master Data Hub}
+        F[Failover & Cooldown Engine]
+        C1(Global Cache)
+    end
+
+    subgraph Client-Side (Browser)
+        U1[User 1: Global View]
+        U2[User 2: Regional View]
+        P[Autonomous Physics Engine<br>Dead Reckoning]
+    end
+
+    O -->|Primary 90s Pulse| F
+    A -.->|Backup 1| F
+    B -.->|Backup 2| F
+    C -.->|Emergency Backup| F
+    
+    F --> M
+    M -->|Updates| C1
+    
+    C1 -->|On-the-fly Filtering| U1
+    C1 -->|On-the-fly Filtering| U2
+
+    U1 --> P
+    U2 --> P
 ```
 
-### 💎 Key Innovations in V8.0
-
-- **🚀 Sovereign Proxy Engine:** Sunucu, her 90 saniyede bir kez Global veri çeker. Kullanıcılar nereye bakarsa baksın, sunucu tek bir kredi (4 puan) harcayarak tüm dünyaya hizmet verir.
-- **✈️ Autonomous Flight Physics (Dead Reckoning):** API verisi gelmediği (90 saniyelik boşluklar) süre boyunca uçaklar haritada donmaz; son hız ve yönlerine göre otonom olarak uçmaya devam ederler.
-- **🛡️ Multi-Source Failover:** OpenSky hata verirse sistem sırasıyla Airplanes.Live, ADSB.one ve ADSB.lol kanallarına otomatik geçiş yapar.
-- **📉 Intelligent Credit Preservation:** 4000 VIP krediyi 24 saate yayan dinamik ritmik tarama sistemi.
+### 🧠 Teknik Otonomi Seçenekleri
+- **Akıllı Kredi Koruma (90s Pulse):** Sunucu, OpenSky'dan tüm dünyanın verisini 90 saniyede bir kez çeker (1 İstek = 4 Kredi). Sitede kaç kullanıcı olursa olsun fazladan kredi harcanmaz. 4000 VIP kredisi 24 saate mükemmel bir şekilde yayılır.
+- **Failover / Cooldown (Kendini İyileştirme):** Birinciil sağlayıcı (OpenSky) kesintiye uğrarsa, sistem ping atmaya devam etmek yerine o API'yi 5 dakikalık "Soğuma" (Cooldown) moduna alır. Müşterilere kesinti yansıtılmadan anında Airplanes.Live vb. yedek ağlara geçilir.
+- **Otonom İlerleme (Dead Reckoning):** 90 saniyelik veri boşluklarında radar ekranındaki uçaklar donmaz. **ShadowNet Physics Engine**, uçakların son raporlanan lokasyon, hız (kt) ve yön (heading) vektörlerini hesaplayarak otonom olarak uçmaya devam etmelerini sağlar.
 
 ---
 
-## 🐳 Docker Deployment (Professional Setup)
+## 🛠️ Ana Modüller ve Veri Kaynakları
 
-ShadowNet'i herhangi bir ortamda tek komutla ayağa kaldırın:
+ShadowNet, iki ana görselleştirme arayüzünden oluşur: **3D Global Analytics** ve **2D Tactical Radar**.
 
+### 🌍 3D Global Analytics (Küresel Siber İstihbarat)
+Dünyanın 3 boyutlu topolojik yansıması üzerinde eş zamanlı kriz izleme modülü.
+- **Siber Tehdit Sensörleri (Threat Intel):** AlienVault OTX üzerinden malware, ransomware ve APT gruplarının aktivite nabzını tutar.
+- **BGP Yönlendirme Anomalileri:** Cloudflare Radar kullanılarak okyanus altı kablo kopuklukları veya ulusal düzeyde ağ çöküşlerini algılar.
+- **Balina Ağı (Whale Registry):** Blockchain.info WebSocket bağlantısıyla 5+ BTC / 100+ ETH transferlerini yakalar ve dünya haritasında "lazer ışınları" olarak çizer.
+- **Sismik ve Afet Ağı:** USGS ve GDACS üzerinden 4.0 ve üzeri depremleri, tsunami risklerini titreşim dalgası (sonar ping) efektiyle gösterir.
+- **Yörünge Varlıkları (Orbital Assets):** Uluslararası Uzay İstasyonu (ISS) ve CelesTrak TLE verileri aracılığıyla aktif uydu geçişlerini uzay boşluğunda render eder.
+
+### 📡 2D Tactical Radar (Hava Sahası Tarama)
+NATO komuta-kontrol ekranlarından ilham alınmış, yüksek performanslı Canvas-based radar motoru.
+- **10.000+ Uçak Kapasitesi:** `requestAnimationFrame` ve Canvas 2D teknolojisiyle devasa hava filoları sıfır kasma ile render edilir.
+- **Hayalet İzler (Ghost Tracks):** Sinyali kesilen uçaklar anında silinmez. Radar sistemi 4 tarama döngüsü (6 dakika) boyunca bu uçakların tahmini rotasını *GHOST TRACK* modunda çizmeye devam eder. 10. dakikada veri gelmezse arabuluculuktan kaldırılır.
+- **Askeri/Özel Tanımlama:** Özel HEX kodlu hükümet, askeri veya VIP uçuşları farklı renklerde etiketler.
+
+---
+
+## ⚙️ Kurulum ve Dağıtım (Deployment)
+
+Projenizi ayağa kaldırmak için iki seçeneğiniz vardır: Standart NPM Kurulumu veya Docker.
+
+### Yöntem 1: Standart Başlangıç (Bare Metal)
+
+1. Projeyi klonlayın:
 ```bash
-# Repo'yu klonlayın
 git clone https://github.com/RedRiveRR/ShadowNET.git
 cd ShadowNET
-
-# .env dosyanızı hazırlayın
-cp .env.example .env 
-
-# Docker Compose ile başlatın
-docker-compose up -d
 ```
-Sistem anında `http://localhost:5173` adresinden yayına başlayacaktır.
+
+2. Paketleri yükleyin:
+```bash
+npm install
+```
+
+3. Çevresel değişkenleri hazırlayın:
+`.env.example` dosyasını baz alarak kendi `.env` dosyanızı oluşturun (Değişkenler tablosuna bakın).
+
+4. **Sistem Kontrol Aracı (Pre-flight Check)** ile güvenliğinizi teyit edin:
+```bash
+node sys-check.js
+```
+
+5. Ateşleme:
+```bash
+npm run dev
+```
+
+### Yöntem 2: Dockerize Edilmiş Dağıtım (Önerilen)
+
+Sistemi herhangi bir sunucuda Nodejs kurmadan çalıştırmak için:
+```bash
+cp .env.example .env
+docker-compose up -d --build
+```
+Sistem `http://localhost:5173` üzerinde ayağa kalkacak, volume mapping sayesinde kodda yaptığınız değişiklikler (hot-reload) anında sayfaya yansıyacaktır.
 
 ---
 
-## 🛠️ Requirements & Security
+## 🔐 Configuration / Çevresel Değişkenler
 
-ShadowNet, hassas verilerinizi (`.env`) repository'ye sızdırmaz. `.gitignore` yapılandırması siber güvenlik standartlarına uygundur.
+ShadowNet'in dış dünyayla konuşabilmesi için temel API anahtarları gereklidir. `.env` dosyası kasten `.gitignore` kurallarına tabi tutulmuştur.
 
-- **VITE_OPENSKY_CLIENT_ID:** OpenSky OAuth2 Client ID
-- **VITE_OPENSKY_CLIENT_SECRET:** OpenSky OAuth2 Secret
-- **VITE_OTX_API_KEY:** AlienVault Pulse Key
-- **VITE_CLOUDFLARE_API_TOKEN:** Radar API Token
+| Degişken | Kaynak / Amaç | Zorunlu mu? |
+| :--- | :--- | :--- |
+| `VITE_OPENSKY_CLIENT_ID` | OpenSky VIP OAuth2 Client ID | Evet (B Planı var) |
+| `VITE_OPENSKY_CLIENT_SECRET` | OpenSky VIP OAuth2 Secret Key | Evet (B Planı var) |
+| `VITE_OTX_API_KEY` | AlienVault OTX Siber Tehdit Anahtarı | Hayır |
+| `VITE_CLOUDFLARE_API_TOKEN` | Yönlendirme (BGP) verisi için Radar Token | Hayır |
+| `VITE_MAPBOX_TOKEN` | Gelecekteki harita altlık güncellemeleri için | Hayır |
 
----
-
-## 📝 Features & Modules
-
-- **📡 Tactical Radar (2D):** Modern hava trafik kontrol terminali hissi veren, detaylı uçuş verisi ve hayalet iz (Ghost Track) destekli 2D görünüm.
-- **🌍 Global Analytics (3D):** Fiberoptik siber saldırılar, BGP yönlendirme anomallikleri ve aktif sismik faaliyetlerin 3D visualizer'ı.
-- **🪙 Whale Registry:** Blockchain üzerindeki yüksek hacimli finansal hareketlerin (Whale TX) coğrafi haritalandırılması.
-
-## ⚖️ License
-This project is licensed under the **MIT License**. Created and maintained by **RedRiveRR**.
+> **Not:** OpenSky anahtarları verilmezse sistem hata vermez, tamamen otonom bir şekilde `Airplanes.live` gibi doğrulaması olmayan yedek (Backup) sistemlere geçiş yapar. Ancak limitlere ve banlara tabi olabilir.
 
 ---
-*Developed for tactical awareness and global intelligence monitoring.*
+
+## 📜 Lisans & Yasal Uyarı
+
+Bu proje **MIT License** altında lisanslanmıştır. Kullanım hakları, kopyalama ve değiştirme konusunda özgürsünüz. Ek lisans dosyası için [LICENSE](LICENSE) dizinini inceleyebilirsiniz.
+
+*ShadowNet platformu sadece osint ve durumsal farkındalık deneyleri için yaratılmıştır. Elde edilen verilerin askeri, ticari veya havacılık bağlayıcılığı yoktur.*
+
+---
+*Created in the Shadows by RedRiveRR.*
