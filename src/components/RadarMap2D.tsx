@@ -1,54 +1,208 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { useMetricsStore } from '../store/useMetricsStore';
 import { X, List } from 'lucide-react';
 
+// === OTONOM SİBER & İSTİHBARAT SÖZLÜĞÜ (AI RSS SCANNER) ===
+const CONFLICT_KEYWORDS = ["war", "strike", "attack", "conflict", "clash", "missile", "drone", "killed", "troops", "invasion", "military", "fire", "assassination", "bombbardment"];
+const COUNTRY_TO_ISO: Record<string, string> = {
+  "ukraine": "UKR", "russia": "RUS", "israel": "ISR", "lebanon": "LBN",
+  "palestine": "PSE", "gaza": "PSE", "iran": "IRN", "syria": "SYR",
+  "yemen": "YEM", "sudan": "SDN", "myanmar": "MMR", "taiwan": "TWN",
+  "somalia": "SOM", "haiti": "HTI", "mali": "MLI"
+};
+
+interface ConflictInfo {
+  iso: string;
+  countryName: string;
+  news: { title: string; desc: string; link: string; date: string }[];
+}
+
+// === DEAD RECKONING (HAYALET İZ SİSTEMİ) ===
+interface GhostFlight {
+  id: string;
+  lat: number;       // Görsel pozisyon (ekranda çizilen)
+  lng: number;       // Görsel pozisyon (ekranda çizilen)
+  targetLat: number; // API'den gelen son gerçek pozisyon
+  targetLng: number; // API'den gelen son gerçek pozisyon
+  heading: number;
+  speed: number; // kt
+  velocity_m_s: number;
+  callsign: string;
+  alt: number;
+  type?: string;
+  lastSeen: number;
+  isGhost: boolean;
+}
+
+const GHOST_LIFETIME_MS = 2 * 60 * 1000; // 2 dakika - senkronizasyon kaybında temizlik süresi
+
 export default function RadarMap2D() {
-  const { flights, selectedFlight, setSelectedFlight } = useMetricsStore();
+
+  const { flights, selectedFlight, setSelectedFlight, apiStatus } = useMetricsStore();
   const lastUpdateRef = useRef<number>(Date.now());
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [dimensions, setDimensions] = useState({ width: window.innerWidth, height: window.innerHeight });
+  
+  const [geoData, setGeoData] = useState<any>(null);
+  const [conflictData, setConflictData] = useState<Record<string, ConflictInfo>>({});
+  const [selectedConflict, setSelectedConflict] = useState<ConflictInfo | null>(null);
+  
+  const conflictIsos = Object.keys(conflictData);
 
-  // DOM ve State Referansları (Performans İçin)
-  const flightRefs = useRef(new Map<string, SVGGElement>());
-  const flightStateRef = useRef(new Map<string, { lat: number, lng: number }>());
+  // Dead Reckoning Motor Durumu
+  const ghostMapRef = useRef(new Map<string, GhostFlight>());
+
+  useEffect(() => {
+    // 1. Kusursuz GeoJSON Harita Altlığı
+    fetch('https://raw.githubusercontent.com/johan/world.geo.json/master/countries.geo.json')
+      .then(res => res.json())
+      .then(data => setGeoData(data))
+      .catch(err => console.error("GeoJSON Map Error:", err));
+
+    // 2. Otonom Haber & Tehdit Algılayıcı Ağ (BBC World RSS AI)
+    const fetchNews = async () => {
+      const fallbackConflicts: Record<string, ConflictInfo> = {
+        'UKR': { iso: 'UKR', countryName: 'UKRAINE', news: [{ title: 'Active War Zone: Ukraine', desc: 'Ongoing high-intensity kinetic conflict and airspace restrictions.', link: '#', date: new Date().toISOString() }] },
+        'ISR': { iso: 'ISR', countryName: 'ISRAEL', news: [{ title: 'Active Combat Ops: Israel', desc: 'Military operations and restricted airspace over affected regions.', link: '#', date: new Date().toISOString() }] },
+        'LBN': { iso: 'LBN', countryName: 'LEBANON', news: [{ title: 'Border Hostilities', desc: 'Active security alerts and skirmishes.', link: '#', date: new Date().toISOString() }] },
+        'PSE': { iso: 'PSE', countryName: 'PALESTINE', news: [{ title: 'Gaza Crisis', desc: 'Ongoing conflict and severe humanitarian emergency.', link: '#', date: new Date().toISOString() }] },
+        'IRN': { iso: 'IRN', countryName: 'IRAN', news: [{ title: 'Regional Tensions', desc: 'Heightened military readiness and airspace monitoring.', link: '#', date: new Date().toISOString() }] },
+        'RUS': { iso: 'RUS', countryName: 'RUSSIA', news: [{ title: 'Restricted Airspace', desc: 'Western flight bans and military operations.', link: '#', date: new Date().toISOString() }] },
+        'YEM': { iso: 'YEM', countryName: 'YEMEN', news: [{ title: 'Red Sea Hostilities', desc: 'Naval disruptions and drone activity.', link: '#', date: new Date().toISOString() }] },
+        'SDN': { iso: 'SDN', countryName: 'SUDAN', news: [{ title: 'Civil War', desc: 'Intense factional fighting and comprehensive airspace closure.', link: '#', date: new Date().toISOString() }] },
+        'SYR': { iso: 'SYR', countryName: 'SYRIA', news: [{ title: 'Active Conflict', desc: 'Multiple faction combat operations and unstable control.', link: '#', date: new Date().toISOString() }] }
+      };
+
+      try {
+        const rssUrl = "https://api.rss2json.com/v1/api.json?rss_url=https%3A%2F%2Ffeeds.bbci.co.uk%2Fnews%2Fworld%2Frss.xml";
+        const res = await fetch(rssUrl);
+        const data = await res.json();
+        
+        const activeMap = { ...fallbackConflicts };
+        
+        data.items?.forEach((item: any) => {
+          const text = (item.title + " " + item.description).toLowerCase();
+          const hasConflictKeyword = CONFLICT_KEYWORDS.some(kw => text.includes(kw));
+          
+          if (hasConflictKeyword) {
+            Object.entries(COUNTRY_TO_ISO).forEach(([country, iso]) => {
+              if (text.includes(country)) {
+                if (!activeMap[iso]) {
+                  activeMap[iso] = { iso, countryName: country.toUpperCase(), news: [] };
+                }
+                if (!activeMap[iso].news.find((n: any) => n.title === item.title)) {
+                  activeMap[iso].news.push({ title: item.title, desc: item.description, link: item.link, date: item.pubDate });
+                }
+              }
+            });
+          }
+        });
+        
+        setConflictData(activeMap);
+      } catch (err) {
+        console.error("RSS AI Scanner Error:", err);
+        setConflictData(fallbackConflicts);
+      }
+    };
+    fetchNews();
+  }, []);
+
+  // Canvas ve SVG Referansları
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   const mapGroupRef = useRef<SVGGElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const containerDims = useRef({ width: window.innerWidth, height: window.innerHeight });
   
   // Pan-Zoom Referansları
-  const transformRef = useRef({ x: 0, y: 0, k: 1 });
+  const initialK = 10;
+  const initCyprusX = (34 + 180) * (window.innerWidth / 360);
+  const initCyprusY = (90 - 35) * (window.innerHeight / 180);
+  const transformRef = useRef({ 
+    x: window.innerWidth / 2 - (initCyprusX * initialK), 
+    y: window.innerHeight / 2 - (initCyprusY * initialK), 
+    k: initialK 
+  });
   const isDragging = useRef(false);
   const startDrag = useRef({ x: 0, y: 0 });
-  const dragDistance = useRef(0); // Tıklama sorununu çözmek için
+  const dragDistance = useRef(0);
 
   useEffect(() => {
     const handleResize = () => setDimensions({ width: window.innerWidth, height: window.innerHeight });
     window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
+    
+    // Container boyutunu izle (sidebar açık/kapalı durumunu takip eder)
+    const ro = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        containerDims.current = { width: entry.contentRect.width, height: entry.contentRect.height };
+        // Canvas piksel buffer'ını da güncelle
+        if (canvasRef.current) {
+          canvasRef.current.width = entry.contentRect.width;
+          canvasRef.current.height = entry.contentRect.height;
+        }
+      }
+    });
+    if (containerRef.current) ro.observe(containerRef.current);
+    
+    return () => { window.removeEventListener('resize', handleResize); ro.disconnect(); };
   }, []);
 
   // Sınır Çizgilerini Kontrol Eden Güvenlik (Boşluğa Düşmeyi Engeller)
   const clampTransform = () => {
     const t = transformRef.current;
-    if (t.k < 1) t.k = 1; // Minimum zoom tam ekran boyutunu korur
-    
-    // Zoom 1 ise (k=1), hareket (pan) edemeyiz x=0, y=0 olmalı
+    if (t.k < 1) t.k = 1;
     const minX = dimensions.width * (1 - t.k);
     const minY = dimensions.height * (1 - t.k);
-    
     t.x = Math.max(minX, Math.min(0, t.x));
     t.y = Math.max(minY, Math.min(0, t.y));
+    updateStoreBounds();
   };
+
+  const updateStoreBounds = useCallback(() => {
+    const t = transformRef.current;
+    if (!t) return;
+
+    // Screen corners to Lat/Lon
+    const w = dimensions.width;
+    const h = dimensions.height;
+
+    const getCoord = (sx: number, sy: number) => {
+      const lx = (sx - t.x) / t.k;
+      const ly = (sy - t.y) / t.k;
+      const lng = (lx / (w / 360)) - 180;
+      const lat = 90 - (ly / (h / 180));
+      return { lat, lng };
+    };
+
+    const topLeft = getCoord(0, 0);
+    const bottomRight = getCoord(w, h);
+
+    // Kredi tasarrufu için: Eğer zoom seviyesi çok düşükse (Global) bounds gönderme
+    if (t.k < 2.5) {
+      useMetricsStore.getState().setApiStatus({ ...apiStatus, currentBounds: null });
+    } else {
+      useMetricsStore.getState().setApiStatus({
+        ...apiStatus,
+        currentBounds: {
+          lamin: Math.max(-90, bottomRight.lat),
+          lomin: Math.max(-180, topLeft.lng),
+          lamax: Math.min(90, topLeft.lat),
+          lomax: Math.min(180, bottomRight.lng)
+        }
+      });
+    }
+  }, [dimensions, apiStatus]);
 
   // === NATIVE PAN & ZOOM LİSTENERLARI ===
   const onPointerDown = (e: React.PointerEvent) => {
     isDragging.current = true;
-    dragDistance.current = 0; // Mesafe sıfırlanır
+    dragDistance.current = 0;
     startDrag.current = { x: e.clientX - transformRef.current.x, y: e.clientY - transformRef.current.y };
-    e.currentTarget.setPointerCapture(e.pointerId);
+    (e.target as Element).setPointerCapture?.(e.pointerId);
   };
   
   const onPointerMove = (e: React.PointerEvent) => {
     if (!isDragging.current) return;
-    dragDistance.current += Math.abs(e.movementX) + Math.abs(e.movementY); // Fare hareket miktarını ölç
+    dragDistance.current += Math.abs(e.movementX) + Math.abs(e.movementY);
     transformRef.current.x = e.clientX - startDrag.current.x;
     transformRef.current.y = e.clientY - startDrag.current.y;
     clampTransform();
@@ -56,23 +210,68 @@ export default function RadarMap2D() {
   
   const onPointerUp = (e: React.PointerEvent) => {
     isDragging.current = false;
-    e.currentTarget.releasePointerCapture(e.pointerId);
+    (e.target as Element).releasePointerCapture?.(e.pointerId);
   };
 
   const onWheel = (e: React.WheelEvent) => {
     const { clientX, clientY, deltaY } = e;
-    const factor = deltaY > 0 ? 0.85 : 1.15; // Fare tekerleği hassasiyeti
+    const factor = deltaY > 0 ? 0.85 : 1.15;
     const t = transformRef.current;
     
-    // Cursor'a doğru yakınlaştırma matematiği
     t.x = clientX - (clientX - t.x) * factor;
     t.y = clientY - (clientY - t.y) * factor;
-    t.k = Math.max(1, Math.min(t.k * factor, 150)); // Max 150x zoom, min 1x
+    t.k = Math.max(1, Math.min(t.k * factor, 150));
     
     clampTransform();
   };
 
-  // === 60 FPS INTERPOLATION & ZOOM LOOP ===
+  // Canvas tıklama: En yakın uçağı bul
+  const handleCanvasClick = useCallback((e: React.MouseEvent) => {
+    if (dragDistance.current > 5) return; // Sürükleme ise tıklama tetikleme
+    
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const clickX = e.clientX - rect.left;
+    const clickY = e.clientY - rect.top;
+    const t = transformRef.current;
+    
+    let closestDist = 25; // Hitbox piksel yarıçapı
+    let closestFlight: any = null;
+    
+    const ghostMap = ghostMapRef.current;
+    for (const ghost of ghostMap.values()) {
+      const localX = (ghost.lng + 180) * (containerDims.current.width / 360);
+      const localY = (90 - ghost.lat) * (containerDims.current.height / 180);
+      const screenX = localX * t.k + t.x;
+      const screenY = localY * t.k + t.y;
+      const dist = Math.hypot(screenX - clickX, screenY - clickY);
+      if (dist < closestDist) {
+        closestDist = dist;
+        closestFlight = ghost;
+      }
+    }
+    
+    if (closestFlight) {
+      // Store'daki flight objesini seç (eğer hala API'den geliyorsa)
+      const storeFlights = useMetricsStore.getState().flights || [];
+      const real = storeFlights.find(f => f.id === closestFlight.id);
+      setSelectedFlight(real || {
+        id: closestFlight.id,
+        lat: closestFlight.lat,
+        lng: closestFlight.lng,
+        alt: closestFlight.alt,
+        heading: closestFlight.heading,
+        speed: closestFlight.speed,
+        callsign: closestFlight.callsign,
+        type: closestFlight.type || 'COMM',
+        velocity_m_s: closestFlight.velocity_m_s
+      });
+    } else {
+      setSelectedFlight(null);
+    }
+  }, [dimensions, setSelectedFlight]);
+
+  // === 60 FPS CANVAS RENDER + DEAD RECKONING ENGINE ===
   useEffect(() => {
     let frameId: number;
     const animate = () => {
@@ -80,70 +279,153 @@ export default function RadarMap2D() {
       const dt = now - lastUpdateRef.current;
       lastUpdateRef.current = now;
 
-      // 1. Zoom/Pan arkaplana uygula
+      // 1. SVG Harita Zoom/Pan uygula
       if (mapGroupRef.current) {
         const { x, y, k } = transformRef.current;
         mapGroupRef.current.setAttribute('transform', `translate(${x}, ${y}) scale(${k})`);
       }
 
-      // 2. Uçakların pozisyonlarını hesapla
+      // 2. API uçaklarını Ghost Map'e yaz/güncelle
       const currentFlights = useMetricsStore.getState().flights || [];
-      const VISUAL_SPEED_MULT = 40; // Gözle görülür hareket için hız çarpanı
-
-      currentFlights.forEach(sf => {
-        let state = flightStateRef.current.get(sf.id);
-        const obj = flightRefs.current.get(sf.id);
-        
-        if (!state) {
-          state = { lat: sf.lat, lng: sf.lng };
-          flightStateRef.current.set(sf.id, state);
+      const ghostMap = ghostMapRef.current;
+      const liveIds = new Set<string>();
+      
+      for (const sf of currentFlights) {
+        liveIds.add(sf.id);
+        const existing = ghostMap.get(sf.id);
+        if (existing) {
+          // API'den gelen hedef pozisyonu güncelle
+          existing.targetLat = sf.lat;
+          existing.targetLng = sf.lng;
+          existing.heading = sf.heading || existing.heading;
+          existing.speed = sf.speed || existing.speed;
+          existing.velocity_m_s = sf.velocity_m_s || existing.velocity_m_s;
+          existing.alt = sf.alt;
+          existing.callsign = sf.callsign;
+          existing.lastSeen = now;
+          existing.isGhost = false;
+        } else {
+          ghostMap.set(sf.id, {
+            id: sf.id,
+            lat: sf.lat,
+            lng: sf.lng,
+            targetLat: sf.lat,
+            targetLng: sf.lng,
+            heading: sf.heading || 0,
+            speed: sf.speed || 0,
+            velocity_m_s: sf.velocity_m_s || 0,
+            callsign: sf.callsign,
+            alt: sf.alt,
+            type: sf.type,
+            lastSeen: now,
+            isGhost: false
+          });
         }
-
-        const v = sf.velocity_m_s || 0;
-        const h = (90 - (sf.heading || 0)) * (Math.PI / 180);
-        // Gerçek mesafeyi görsel bir çarpana tabi tutuyoruz
-        const distMeters = (v * VISUAL_SPEED_MULT) * (dt / 1000);
-        const R = 6371000;
-        
-        const dLat = (distMeters * Math.sin(h)) / R * (180 / Math.PI);
-        const dLng = (distMeters * Math.cos(h)) / (R * Math.cos(state.lat * Math.PI / 180)) * (180 / Math.PI);
-
-        state.lat += dLat;
-        state.lng += dLng;
-
-        state.lat += (sf.lat - state.lat) * 0.05;
-        state.lng += (sf.lng - state.lng) * 0.05;
-
-        // Ekrana Çizim (Frustum Culling = Görüş Dışı Uçakları Gizle / Kasma Önleyici)
-        if (obj) {
-          const localX = (state.lng + 180) * (dimensions.width / 360);
-          const localY = (90 - state.lat) * (dimensions.height / 180);
-          
-          const t = transformRef.current;
-          const invScale = 1 / Math.max(0.1, t.k);
-          
-          // Uçağın o anki gerçek EKRAN piksel değerini bul
-          const screenX = localX * t.k + t.x;
-          const screenY = localY * t.k + t.y;
-
-          // Eğer ekran sınırları dışındaysa (View Boşa ise) Gizle (Performance Boost %80)
-          const isVisible = screenX > -50 && screenX < dimensions.width + 50 && screenY > -50 && screenY < dimensions.height + 50;
-
-          if (isVisible) {
-            obj.style.display = 'block';
-            obj.setAttribute('transform', `translate(${localX}, ${localY}) scale(${invScale})`);
-          } else {
-            obj.style.display = 'none'; // Sadece bellekte yaşasın ama çizilmesin
+      }
+      
+      // Görsel pozisyonları güncelle (Smooth Lerp — doğrudan API konumuna akıcı geçiş)
+      for (const [id, ghost] of ghostMap.entries()) {
+        if (!liveIds.has(id)) {
+          ghost.isGhost = true;
+          if (now - ghost.lastSeen > GHOST_LIFETIME_MS) {
+            ghostMap.delete(id);
+            continue;
           }
         }
-      });
+        
+        // API konumuna doğru akıcı kayma (0.05/kare = ~1.5 saniyede %95 ulaşır)
+        ghost.lat += (ghost.targetLat - ghost.lat) * 0.05;
+        ghost.lng += (ghost.targetLng - ghost.lng) * 0.05;
 
-      // Memory Cleanup
-      const currentFlightIds = new Set(currentFlights.map(f => f.id));
-      for (const id of flightStateRef.current.keys()) {
-        if (!currentFlightIds.has(id)) {
-          flightStateRef.current.delete(id);
-          flightRefs.current.delete(id);
+        // Otonom İlerleme Motoru (Dead Reckoning - API verisi gelmediğinde veya Hayalet modda)
+        // Bu motor, uçakların son hızı ve yönüne göre haritada yol almasını sağlar.
+        if (ghost.isGhost || apiStatus.activeProvider.includes('SIMULATED')) {
+          const metersPerSec = ghost.velocity_m_s || (ghost.speed * 0.5144);
+          const distMeters = metersPerSec * (dt / 1000); 
+          
+          const deltaLat = (distMeters / 111111) * Math.cos(ghost.heading * Math.PI / 180);
+          const deltaLng = (distMeters / (111111 * Math.cos(ghost.lat * Math.PI / 180))) * Math.sin(ghost.heading * Math.PI / 180);
+          
+          ghost.lat += deltaLat;
+          ghost.lng += deltaLng;
+          // Hedefi de kaydır ki titreme yapmasın
+          ghost.targetLat += deltaLat;
+          ghost.targetLng += deltaLng;
+        }
+      }
+
+      // 3. Canvas Render (10.000+ uçak tek drawCall farkıyla tereyağı gibi)
+      const canvas = canvasRef.current;
+      if (!canvas) { frameId = requestAnimationFrame(animate); return; }
+      const ctx = canvas.getContext('2d');
+      if (!ctx) { frameId = requestAnimationFrame(animate); return; }
+      
+      const W = canvas.width;
+      const H = canvas.height;
+      ctx.clearRect(0, 0, W, H);
+      
+      const t = transformRef.current;
+      const selectedId = useMetricsStore.getState().selectedFlight?.id;
+      // Koordinat hesabında gerçek container boyutunu kullan (SVG ile eşleşsin)
+      const cW = containerDims.current.width;
+      const cH = containerDims.current.height;
+
+      for (const ghost of ghostMap.values()) {
+        const localX = (ghost.lng + 180) * (cW / 360);
+        const localY = (90 - ghost.lat) * (cH / 180);
+        const screenX = localX * t.k + t.x;
+        const screenY = localY * t.k + t.y;
+
+        // Frustum Culling (ekran dışını çizme)
+        if (screenX < -20 || screenX > W + 20 || screenY < -20 || screenY > H + 20) continue;
+
+        const isSelected = ghost.id === selectedId;
+        const opacity = ghost.isGhost ? Math.max(0.15, 1 - ((now - ghost.lastSeen) / GHOST_LIFETIME_MS)) : 1;
+
+        ctx.save();
+        ctx.translate(screenX, screenY);
+        ctx.rotate((ghost.heading || 0) * Math.PI / 180);
+        ctx.globalAlpha = opacity;
+
+        // Uçak şekli (üçgen ok)
+        ctx.beginPath();
+        ctx.moveTo(0, -7);
+        ctx.lineTo(-5, 5);
+        ctx.lineTo(0, 2);
+        ctx.lineTo(5, 5);
+        ctx.closePath();
+
+        if (isSelected) {
+          ctx.fillStyle = '#ffffff';
+          ctx.shadowColor = '#ffffff';
+          ctx.shadowBlur = 8;
+        } else if (ghost.isGhost) {
+          ctx.fillStyle = '#94a3b8'; // Hayalet: Gri
+        } else {
+          ctx.fillStyle = '#facc15'; // Normal: Sarı
+        }
+        ctx.fill();
+        ctx.shadowBlur = 0;
+
+        ctx.restore();
+
+        // Seçili uçak etiketi
+        if (isSelected) {
+          ctx.save();
+          ctx.globalAlpha = opacity;
+          ctx.font = 'bold 11px monospace';
+          ctx.fillStyle = '#fff';
+          ctx.textAlign = 'center';
+          ctx.fillText(ghost.callsign, screenX, screenY + 18);
+          ctx.font = '9px monospace';
+          ctx.fillStyle = 'rgba(255,255,255,0.7)';
+          ctx.fillText(`${Math.round(ghost.alt / 100)}FL · ${Math.round(ghost.speed)}kt`, screenX, screenY + 28);
+          if (ghost.isGhost) {
+            ctx.fillStyle = '#ef4444';
+            ctx.font = 'bold 8px monospace';
+            ctx.fillText('GHOST TRACK', screenX, screenY + 38);
+          }
+          ctx.restore();
         }
       }
 
@@ -154,15 +436,20 @@ export default function RadarMap2D() {
   }, [dimensions]);
 
   const getCoords = (lat: number, lng: number) => {
-    const x = (lng + 180) * (dimensions.width / 360);
-    const y = (90 - lat) * (dimensions.height / 180);
+    const cW = containerDims.current.width;
+    const cH = containerDims.current.height;
+    const x = (lng + 180) * (cW / 360);
+    const y = (90 - lat) * (cH / 180);
     return { x, y };
   };
 
-  // Sadece tıklama (Sürükleme varsa tetiklenmez)
-  const handleFlightClick = (e: any, f: any) => {
-    e.stopPropagation();
-    setSelectedFlight(f);
+  const createPathStr = (rings: number[][][]) => {
+    return rings.map(ring => {
+      return "M " + ring.map(coord => {
+        const pt = getCoords(coord[1], coord[0]);
+        return `${pt.x.toFixed(1)},${pt.y.toFixed(1)}`;
+      }).join(' L ') + " Z";
+    }).join(' ');
   };
 
   return (
@@ -170,82 +457,159 @@ export default function RadarMap2D() {
       
       {/* ANA RADAR EKRANI */}
       <div 
+        ref={containerRef}
         style={{ flex: 1, position: 'relative', cursor: isDragging.current ? 'grabbing' : 'crosshair' }}
       >
-        <svg 
-          width="100%" 
-          height="100%" 
+        {/* Taktik Veri Stream HUD (Quad-Source Status) */}
+        <div style={{ 
+          position: 'absolute', 
+          bottom: '120px', 
+          left: '50%', 
+          transform: 'translateX(-50%)', 
+          zIndex: 999, 
+          display: 'flex', 
+          gap: '12px',
+          background: apiStatus.activeProvider.includes('SIMULATED') ? 'rgba(239, 68, 68, 0.2)' : 'rgba(15,23,42,0.85)',
+          padding: '8px 20px',
+          borderRadius: '100px',
+          border: `1px solid ${apiStatus.activeProvider.includes('SIMULATED') ? '#ef4444' : 'rgba(56, 189, 248, 0.3)'}`,
+          backdropFilter: 'blur(10px)',
+          boxShadow: '0 0 30px rgba(0,0,0,0.5)',
+          pointerEvents: 'none',
+          fontFamily: 'monospace',
+          fontSize: '0.75rem',
+          transition: 'all 0.5s ease'
+        }}>
+          {apiStatus.providers.map((p, idx) => (
+            <div key={p.name} style={{ display: 'flex', alignItems: 'center', gap: '8px', opacity: p.status === 'WAIT' ? 0.3 : 1 }}>
+              <div style={{ 
+                width: '8px', 
+                height: '8px', 
+                borderRadius: '50%', 
+                background: p.status === 'OK' ? '#22c55e' : p.status === 'ERR' ? '#ef4444' : '#64748b',
+                boxShadow: p.status === 'OK' ? '0 0 10px #22c55e' : 'none',
+                animation: p.name === apiStatus.activeProvider ? 'pulse 1.5s infinite' : 'none'
+              }} />
+              <span style={{ 
+                color: p.name === apiStatus.activeProvider ? '#fff' : 'rgba(255,255,255,0.4)',
+                fontWeight: p.name === apiStatus.activeProvider ? 'bold' : 'normal',
+                letterSpacing: '0.5px'
+              }}>
+                {p.name}
+              </span>
+              {idx < apiStatus.providers.length - 1 && (
+                <div style={{ width: '1px', height: '12px', background: 'rgba(255,255,255,0.1)', marginLeft: '8px' }} />
+              )}
+            </div>
+          ))}
+          <div style={{ 
+            marginLeft: '15px', 
+            paddingLeft: '15px', 
+            borderLeft: '1px solid rgba(255,255,255,0.2)', 
+            color: apiStatus.activeProvider.includes('SIMULATED') ? '#ef4444' : apiStatus.activeProvider !== 'OPENSKY' ? '#facc15' : '#fff', 
+            fontSize: '0.7rem',
+            fontWeight: 'bold',
+            textTransform: 'uppercase',
+            display: 'flex',
+            flexDirection: 'column'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+              {apiStatus.activeProvider !== 'OPENSKY' && apiStatus.activeProvider !== 'INITIALIZING' && (
+                <span style={{ 
+                  background: apiStatus.activeProvider.includes('SIMULATED') ? '#ef4444' : '#facc15', 
+                  color: '#000', 
+                  padding: '2px 6px', 
+                  borderRadius: '4px', 
+                  fontSize: '0.6rem',
+                  marginRight: '5px',
+                  animation: 'pulse 1s infinite'
+                }}>
+                  {apiStatus.activeProvider.includes('SIMULATED') ? 'EMERGENCY' : 'BACKUP'}
+                </span>
+              )}
+              {apiStatus.activeProvider.includes('ERROR') ? '⚠️ OFFLINE' : `📡 ${apiStatus.activeProvider}`}
+            </div>
+            {apiStatus.remainingCredits !== null && apiStatus.activeProvider === 'OPENSKY' && (
+              <div style={{ fontSize: '0.6rem', color: '#22c55e', marginTop: '2px' }}>
+                ⛽ CREDITS: {apiStatus.remainingCredits.toLocaleString()} / 4000
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* CSS Animations (Global inject would be better but here for clarity) */}
+        <style dangerouslySetInnerHTML={{ __html: `
+          @keyframes sonarPing { 0% { transform: scale(1); opacity: 0.8; } 100% { transform: scale(3.5); opacity: 0; } }
+          @keyframes slideRight { from { transform: translateX(-40px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+          @keyframes slideUp { from { transform: translateY(40px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+          @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.4; } 100% { opacity: 1; } }
+        `}} />
+
+        {/* CANVAS: Uçaklar burada çizilir (10.000+ uçak 0 kasma) */}
+        <canvas
+          ref={canvasRef}
+          width={containerDims.current.width}
+          height={containerDims.current.height}
+          onClick={handleCanvasClick}
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
           onWheel={onWheel}
-          style={{ touchAction: 'none' }} // Farenin sayfayı kaydırmasını engeller
+          style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', touchAction: 'none' }}
+        />
+
+        {/* SVG: Harita altlığı (Canvas'ın ÜSTÜNDE — ama sadece conflict pathlar tıklanabilir) */}
+        <svg 
+          width="100%" 
+          height="100%" 
+          style={{ position: 'absolute', top: 0, left: 0, touchAction: 'none', pointerEvents: 'none' }}
         >
-          {/* Radar Izgarası Sabit Kalır */}
           <defs>
             <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
               <path d="M 40 0 L 0 0 0 40" fill="none" stroke="rgba(56, 189, 248, 0.05)" strokeWidth="0.5"/>
             </pattern>
+            <pattern id="hatchRed" width="6" height="6" patternTransform="rotate(45 0 0)" patternUnits="userSpaceOnUse">
+              <line x1="0" y1="0" x2="0" y2="6" stroke="rgba(239, 68, 68, 0.4)" strokeWidth="2" />
+            </pattern>
           </defs>
           <rect width="100%" height="100%" fill="url(#grid)" pointerEvents="none" />
 
-          {/* DÜNYA VE UÇAKLARIN OLDUĞU ZOOM GRUBU */}
           <g ref={mapGroupRef}>
-            
-            {/* Yüksek Çözünürlüklü Vektörel Harita (Sonsuz Zoom yapılabilir, bozulmaz) */}
-            <image 
-              href="https://upload.wikimedia.org/wikipedia/commons/e/ec/World_map_blank_without_borders.svg" 
-              width={dimensions.width} 
-              height={dimensions.height} 
-              preserveAspectRatio="none" 
-              style={{ opacity: 0.25, filter: 'invert(1) sepia(1) saturate(5) hue-rotate(180deg) brightness(0.6)' }} 
-            />
+            <g>
+              {geoData && geoData.features.map((feature: any, idx: number) => {
+                let d = "";
+                if (feature.geometry.type === 'Polygon') {
+                  d = createPathStr(feature.geometry.coordinates);
+                } else if (feature.geometry.type === 'MultiPolygon') {
+                  d = feature.geometry.coordinates.map((polyRings: number[][][]) => createPathStr(polyRings)).join(' ');
+                }
+                if (!d) return null;
 
-            {/* Uçaklar */}
-            {(flights || []).map(f => {
-              const isSelected = selectedFlight?.id === f.id;
-              const initialCoords = getCoords(f.lat, f.lng);
-              
-              return (
-                <g 
-                  key={f.id} 
-                  className="radar-flight-node"
-                  ref={el => {
-                    if (el) flightRefs.current.set(f.id, el);
-                    else flightRefs.current.delete(f.id);
-                  }}
-                  transform={`translate(${initialCoords.x}, ${initialCoords.y}) scale(1)`} 
-                  onPointerDown={(e) => {
-                    // Tıklamada arka plan haritasının sürüklenmeyi (pointer capture) tetiklemesini engeller
-                    e.stopPropagation();
-                  }}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setSelectedFlight(f);
-                  }}
-                  style={{ cursor: 'pointer', pointerEvents: 'all' }}
-                >
-                  {/* Etkileşim Hitbox Alanı (Tıklama Hassasiyetini Artırır) */}
-                  <circle cx="0" cy="0" r="22" fill="transparent" />
+                const isConflict = conflictIsos.includes(feature.id);
 
-                  <g transform={`rotate(${(f.heading || 0)})`}>
-                    <path d="M0 -8 L-6 6 L0 3 L6 6 Z" fill={isSelected ? "#fff" : "#facc15"} />
-                  </g>
-                  
-                  {/* Performans için metinler sadece seçili uçakta gösterilir */}
-                  {isSelected && (
-                    <>
-                      <text y="15" textAnchor="middle" fill="#fff" fontSize="8" style={{ fontWeight: 'bold', pointerEvents: 'none' }}>
-                        {f.callsign}
-                      </text>
-                      <text y="24" textAnchor="middle" fill="rgba(255,255,255,0.8)" fontSize="7" style={{ pointerEvents: 'none' }}>
-                        {Math.round(f.alt / 100)}FL
-                      </text>
-                    </>
-                  )}
-                </g>
-              );
-            })}
+                return (
+                  <path
+                    key={`${feature.id}-${idx}`}
+                    d={d}
+                    fill={isConflict ? "url(#hatchRed)" : "transparent"}
+                    stroke={isConflict ? "#ef4444" : "rgba(56, 189, 248, 0.4)"}
+                    strokeWidth={isConflict ? "1" : "0.5"}
+                    opacity={isConflict ? 0.9 : 0.6}
+                    style={{ pointerEvents: isConflict ? 'all' : 'none', cursor: isConflict ? 'crosshair' : 'default' }}
+                    onPointerDown={(e) => {
+                      if (isConflict) e.stopPropagation();
+                    }}
+                    onClick={(e) => {
+                      if (isConflict) {
+                        e.stopPropagation();
+                        setSelectedConflict(conflictData[feature.id]);
+                        setSelectedFlight(null);
+                      }
+                    }}
+                  />
+                );
+              })}
+            </g>
           </g>
         </svg>
 
@@ -262,6 +626,12 @@ export default function RadarMap2D() {
                 <Property label="HEADING" value={`${Math.round(selectedFlight.heading || 0)}°`} />
                 <Property label="ICAO" value={selectedFlight.id.toUpperCase()} />
              </div>
+             {/* Hayalet uyarısı */}
+             {ghostMapRef.current.get(selectedFlight.id)?.isGhost && (
+               <div style={{ marginTop: '10px', padding: '8px', background: 'rgba(239,68,68,0.15)', borderRadius: '6px', border: '1px solid rgba(239,68,68,0.3)', fontSize: '0.7rem', color: '#f87171', fontFamily: 'monospace', textAlign: 'center' }}>
+                 ⚠ GHOST TRACK — RADAR SIGNAL LOST — DEAD RECKONING ACTIVE
+               </div>
+             )}
           </div>
         )}
       </div>
@@ -323,9 +693,90 @@ export default function RadarMap2D() {
         </button>
       )}
 
+      {/* Savaş Bölgesi İstihbarat Terminali (Global & Targeted) */}
+      <div style={{ 
+        position: 'absolute', 
+        bottom: '20px', 
+        left: '20px', 
+        width: '400px', 
+        background: 'rgba(15,23,42,0.95)', 
+        border: '1px solid rgba(239,68,68,0.5)', 
+        borderRadius: '8px', 
+        boxShadow: '0 10px 25px -5px rgba(0,0,0,0.5), 0 0 15px rgba(239,68,68,0.2)', 
+        backdropFilter: 'blur(12px)', 
+        overflow: 'hidden', 
+        zIndex: 100, 
+        maxHeight: '400px',
+        display: 'flex',
+        flexDirection: 'column',
+        animation: 'slideRight 0.4s ease-out' 
+      }}>
+        <div style={{ background: 'rgba(239,68,68,0.15)', padding: '12px 16px', borderBottom: '1px solid rgba(239,68,68,0.3)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div style={{ position: 'relative', width: '8px', height: '8px' }}>
+              <div style={{ position: 'absolute', width: '100%', height: '100%', borderRadius: '50%', background: '#ef4444', animation: 'sonarPing 2s cubic-bezier(0, 0, 0.2, 1) infinite' }} />
+              <div style={{ position: 'absolute', width: '100%', height: '100%', borderRadius: '50%', background: '#ef4444' }} />
+            </div>
+            <h3 style={{ color: '#f87171', fontFamily: 'monospace', fontWeight: 'bold', margin: 0, fontSize: '0.9rem', letterSpacing: '1px' }}>
+              {selectedConflict ? `RESTRICTED: ${selectedConflict.countryName}` : 'GLOBAL INTELLIGENCE FEED'}
+            </h3>
+          </div>
+          {selectedConflict && (
+            <button onClick={() => setSelectedConflict(null)} style={{ background: 'transparent', border: 'none', color: 'rgba(255,255,255,0.5)', cursor: 'pointer', padding: '0 4px', display: 'flex', alignItems: 'center' }}>
+              <X size={16} />
+            </button>
+          )}
+        </div>
+        
+        <div className="custom-scrollbar" style={{ padding: '16px', overflowY: 'auto', flex: 1, pointerEvents: 'all' }}>
+          <div style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.5)', fontFamily: 'monospace', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <div style={{ width: '4px', height: '4px', background: 'rgba(255,255,255,0.5)' }} /> 
+            LATEST INTELLIGENCE INTERCEPTS
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            {(() => {
+              const dataToShow = selectedConflict ? [selectedConflict] : Object.values(conflictData).filter(c => c.news.length > 0);
+              
+              if (dataToShow.length === 0) {
+                return (
+                  <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.5)', fontStyle: 'italic', padding: '10px', background: 'rgba(255,255,255,0.02)', borderRadius: '4px' }}>
+                    No live intercepts. Persisting baseline airspace restrictions.
+                  </div>
+                );
+              }
+
+              return dataToShow.map(c => (
+                <div key={c.iso} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {!selectedConflict && (
+                     <div style={{ fontSize: '0.7rem', color: '#ef4444', fontWeight: 'bold', fontFamily: 'monospace' }}>
+                       [{c.countryName}]
+                     </div>
+                  )}
+                  {c.news.map((item, idx) => (
+                    <div key={idx} style={{ background: 'rgba(255,255,255,0.03)', padding: '12px', borderRadius: '6px', borderLeft: '2px solid rgba(239,68,68,0.5)' }}>
+                      <a href={item.link} target="_blank" rel="noreferrer" style={{ fontSize: '0.85rem', color: '#e2e8f0', fontWeight: '600', textDecoration: 'none', display: 'block', marginBottom: '6px', lineHeight: '1.3' }}>
+                        {item.title}
+                      </a>
+                      <p style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.6)', margin: 0, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', lineHeight: '1.4' }}>
+                        {item.desc}
+                      </p>
+                      <div style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.4)', marginTop: '8px', fontFamily: 'monospace' }}>
+                         {new Date(item.date).toLocaleString()}
+                      </div>
+                    </div>
+                  ))}
+                  {!selectedConflict && <div style={{ height: '1px', background: 'rgba(255,255,255,0.05)', marginTop: '4px' }} />}
+                </div>
+              ));
+            })()}
+          </div>
+        </div>
+      </div>
+
       <style>{`
-        @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
-        .radar-flight-node { will-change: transform; transition: none; }
+        @keyframes slideRight { from { opacity: 0; transform: translateX(-20px); } to { opacity: 1; transform: translateX(0); } }
+        @keyframes slideUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes sonarPing { 75%, 100% { transform: scale(3); opacity: 0;} }
       `}</style>
     </div>
   );

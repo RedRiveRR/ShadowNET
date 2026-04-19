@@ -143,17 +143,32 @@ export default function GlobeMap() {
       </div>
 
       <div style={{ position: 'absolute', top: '100px', left: '26rem', display: 'flex', flexDirection: 'column', gap: '16px', zIndex: 100, pointerEvents: 'none' }}>
-        {selectedFlight && (
-          <div className="intel-card" style={{ pointerEvents: 'auto', background: 'rgba(15, 23, 42, 0.85)', backdropFilter: 'blur(12px)', border: '1px solid #facc15', borderRadius: '12px', padding: '16px', width: '280px', boxShadow: '0 8px 32px rgba(0,0,0,0.5)', animation: 'slideRight 0.3s ease-out' }}>
+        {selectedSatellite && (
+          <div className="intel-card" style={{ pointerEvents: 'auto', background: 'rgba(15, 23, 42, 0.85)', backdropFilter: 'blur(12px)', border: '1px solid #3b82f6', borderRadius: '12px', padding: '16px', width: '280px', boxShadow: '0 8px 32px rgba(0,0,0,0.5)', animation: 'slideRight 0.3s ease-out' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
-              <div><div style={{ fontSize: '0.6rem', color: '#facc15', fontWeight: 'bold' }}>UÇUŞ İSTİHBARATI</div><div style={{ fontSize: '1.2rem', fontWeight: 'bold' }}>{selectedFlight.callsign}</div></div>
-              <button onClick={() => setSelectedFlight(null)} style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer' }}><X size={16} /></button>
+              <div><div style={{ fontSize: '0.6rem', color: '#3b82f6', fontWeight: 'bold' }}>SATELLITE TELEMETRY</div><div style={{ fontSize: '1.2rem', fontWeight: 'bold', color: '#fff' }}>{selectedSatellite.name || 'SAT-ANONYMOUS'}</div></div>
+              <button onClick={() => setSelectedSatellite(null)} style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer' }}><X size={16} /></button>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-              <DataBlock label="TİP" value={selectedFlight.type} icon={<PlaneIcon size={10}/>} />
-              <DataBlock label="HIZ" value={`${Math.round(selectedFlight.speed || 0)} kt`} icon={<Gauge size={10}/>} color="#facc15" />
-              <DataBlock label="ROTA" value={`${Math.round(selectedFlight.heading || 0)}°`} icon={<Navigation size={10}/>} />
-              <DataBlock label="İRTİFA" value={`${selectedFlight.alt} ft`} icon={<Rocket size={10}/>} />
+              <DataBlock label="NORAD ID" value={selectedSatellite.id} icon={<Crosshair size={10}/>} />
+              <DataBlock label="ORBIT" value="LEO" icon={<Navigation size={10}/>} color="#3b82f6" />
+              <DataBlock label="LATITUDE" value={`${selectedSatellite.lat?.toFixed(4)}°`} icon={<Crosshair size={10}/>} />
+              <DataBlock label="LONGITUDE" value={`${selectedSatellite.lng?.toFixed(4)}°`} icon={<Crosshair size={10}/>} />
+            </div>
+          </div>
+        )}
+
+        {selectedISS && iss && (
+          <div className="intel-card" style={{ pointerEvents: 'auto', background: 'rgba(15, 23, 42, 0.85)', backdropFilter: 'blur(12px)', border: '1px solid #fbbf24', borderRadius: '12px', padding: '16px', width: '280px', boxShadow: '0 8px 32px rgba(0,0,0,0.5)', animation: 'slideRight 0.3s ease-out' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
+              <div><div style={{ fontSize: '0.6rem', color: '#fbbf24', fontWeight: 'bold' }}>ORBITAL STATION</div><div style={{ fontSize: '1.2rem', fontWeight: 'bold', color: '#fff' }}>I.S.S.</div></div>
+              <button onClick={() => setSelectedISS(false)} style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer' }}><X size={16} /></button>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+              <DataBlock label="VELOCITY" value={`${Math.round(iss.velocity || 27600)} km/h`} icon={<Zap size={10}/>} color="#fbbf24" />
+              <DataBlock label="ALTITUDE" value={`${Math.round(iss.altitude || 408)} km`} icon={<Rocket size={10}/>} />
+              <DataBlock label="LATITUDE" value={`${iss.lat?.toFixed(4)}°`} icon={<Crosshair size={10}/>} />
+              <DataBlock label="LONGITUDE" value={`${iss.lng?.toFixed(4)}°`} icon={<Crosshair size={10}/>} />
             </div>
           </div>
         )}

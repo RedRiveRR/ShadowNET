@@ -17,38 +17,85 @@ export const fetchEarthquakes = async () => {
   } catch (e) { console.error('Deprem Hatası:', e); }
 };
 
-// === UÇUŞLAR (Askeri + VIP) ===
-export const fetchFlights = async () => {
+// === UÇUŞLAR (Universal Quad-Source Adapter) ===
+export const fetchFlights = async (bounds?: { lamin: number; lomin: number; lamax: number; lomax: number }) => {
   try {
-    const response = await fetch('/api/data/flights');
-    if (!response.ok) return;
+    let url = '/api/data/flights';
+    if (bounds) {
+      const params = new URLSearchParams({
+        lamin: bounds.lamin.toString(),
+        lomin: bounds.lomin.toString(),
+        lamax: bounds.lamax.toString(),
+        lomax: bounds.lomax.toString()
+      });
+      url += `?${params.toString()}`;
+    }
+
+    const response = await fetch(url);
     const data = await response.json();
-    if (data && data.states) {
-      const flights: Flight[] = [];
-      // Performans/görsellik dengesi için ilk 1500 uçağı alıyoruz
-      const relevantStates = data.states.slice(0, 1500);
+    
+    const activeSource = data._source || 'UNKNOWN';
+    const report = data._report || [];
+    const remainingCredits = data._credits;
 
-      for (const s of relevantStates) {
-        const lat = s[6];
-        const lng = s[5];
-        if (lat === null || lng === null) continue;
+    // API Durumunu Güncelle
+    const currentStatus = useMetricsStore.getState().apiStatus;
+    const providers = currentStatus.providers.map(p => {
+      if (p.name === activeSource) return { ...p, status: 'OK' as const };
+      const failEntry = report.find((r: any) => r.name === p.name);
+      if (failEntry) return { ...p, status: 'ERR' as const };
+      return p;
+    });
 
+    useMetricsStore.getState().setApiStatus({
+      activeProvider: activeSource === 'SIMULATED' ? '⚠️ SIMULATED ⚠️' : activeSource,
+      providers: providers,
+      remainingCredits: remainingCredits !== undefined ? remainingCredits : currentStatus.remainingCredits
+    });
+
+    const flights: Flight[] = [];
+
+    // --- Format Tespiti ve Parsing ---
+    // ADSB-FI / ONE / LOL / SIMULATED FORMATI (ac veya aircraft dizisi)
+    const acList = data.ac || data.aircraft;
+    if (acList && Array.isArray(acList)) {
+      for (const ac of acList) {
+        if (!ac.lat || !ac.lon) continue;
         flights.push({
-          id: s[0], // icao24
-          lat, 
-          lng, 
-          alt: s[7] ? Math.round(s[7] * 3.28084) : 0, // Metreyi feet'e çevir
-          heading: s[10] || 0,
-          speed: s[9] ? Math.round(s[9] * 1.94384) : 0, // m/s'yi Knot'a çevir (Interpolation m/s de kullanabilir)
-          velocity_m_s: s[9] || 0, // Orijinal velocity (m/s) ara değer motoru için
-          callsign: s[1] ? s[1].trim() : 'UNK',
-          type: 'COMM', 
-          reg: 'N/A'
+          id: ac.hex || Math.random().toString(36),
+          lat: ac.lat,
+          lng: ac.lon,
+          alt: ac.alt_baro || 0,
+          heading: ac.track || 0,
+          speed: ac.gs || 0,
+          velocity_m_s: (ac.gs || 0) * 0.514444, 
+          callsign: (ac.flight || ac.callsign || 'UNK').trim(),
+          type: ac.t || 'COMM'
         });
       }
+    } else if (data && data.states) { // OPEN SKY FORMATI
+      for (const s of data.states) {
+        if (s[6] === null || s[5] === null) continue;
+        flights.push({
+          id: s[0], 
+          lat: s[6], 
+          lng: s[5], 
+          alt: s[7] ? Math.round(s[7] * 3.28084) : 0,
+          heading: s[10] || 0,
+          speed: s[9] ? Math.round(s[9] * 1.94384) : 0,
+          velocity_m_s: s[9] || 0,
+          callsign: s[1] ? s[1].trim() : 'UNK',
+          type: 'COMM'
+        });
+      }
+    }
+
+    if (flights.length > 0) {
       useMetricsStore.getState().setFlights(flights);
     }
-  } catch (e) { console.error('Uçuş Hatası:', e); }
+  } catch (e) { 
+    console.error('Uçuş Hatası:', e);
+  }
 };
 
 // === UYDULAR ===
@@ -273,7 +320,10 @@ export const startDataStreams = () => {
   connectCryptoWebSocket();
 
   setInterval(fetchEarthquakes, 60000);
-  setInterval(fetchFlights, 5000);
+  setInterval(() => {
+    const bounds = useMetricsStore.getState().apiStatus.currentBounds;
+    fetchFlights(bounds || undefined);
+  }, 12000); // 12 saniyelik VIP Pulse hızı (Proxy'nin 15s cache süresiyle uyumlu)
   setInterval(fetchISS, 3000);
   setInterval(fetchSatellites, 300000);
   setInterval(fetchNews, 120000);

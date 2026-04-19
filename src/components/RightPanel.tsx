@@ -54,7 +54,7 @@ export default function RightPanel() {
       </div>
 
       <div style={{ marginTop: '0.5rem', padding: '1rem', borderTop: '1px solid var(--panel-border)', textAlign: 'center' }}>
-         <div className="mono" style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>SHADOWNET V7 - GLOBAL GÖZETLEME</div>
+         <div className="mono" style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>SHADOWNET V8.0 - GLOBAL INTELLIGENCE</div>
       </div>
     </div>
   );

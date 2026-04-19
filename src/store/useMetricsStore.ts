@@ -84,6 +84,11 @@ export interface SecurityAlert {
   url?: string;
 }
 
+export interface ProviderStatus {
+  name: string;
+  status: 'OK' | 'ERR' | 'WAIT';
+}
+
 interface MetricsState {
   earthquakes: Earthquake[];
   flights: Flight[];
@@ -94,10 +99,14 @@ interface MetricsState {
   satellites: Satellite[];
   newsEvents: NewsEvent[];
   torNodes: TorNode[];
-  selectedFlight: Flight | null;
-  selectedSatellite: Satellite | null;
   selectedISS: boolean;
   activeView: 'GLOBE' | 'RADAR';
+  apiStatus: {
+    activeProvider: string; // "OPENSKY", "ADSBFİ" vb.
+    providers: ProviderStatus[];
+    remainingCredits: number | null;
+    currentBounds: { lamin: number; lomin: number; lamax: number; lomax: number } | null;
+  };
   
   setEarthquakes: (quakes: Earthquake[]) => void;
   setActiveView: (view: 'GLOBE' | 'RADAR') => void;
@@ -115,6 +124,7 @@ interface MetricsState {
   setSelectedFlight: (flight: Flight | null) => void;
   setSelectedSatellite: (sat: Satellite | null) => void;
   setSelectedISS: (open: boolean) => void;
+  setApiStatus: (status: MetricsState['apiStatus']) => void;
 }
 
 export const useMetricsStore = create<MetricsState>((set) => ({
@@ -131,6 +141,16 @@ export const useMetricsStore = create<MetricsState>((set) => ({
   selectedSatellite: null,
   selectedISS: false,
   activeView: 'GLOBE',
+  apiStatus: {
+    activeProvider: 'INITIALIZING',
+    providers: [
+      { name: 'OPENSKY', status: 'WAIT' },
+      { name: 'AIRPLANES', status: 'WAIT' },
+      { name: 'ADSBLOL', status: 'WAIT' }
+    ],
+    remainingCredits: 4000,
+    currentBounds: null
+  },
   
   setEarthquakes: (quakes) => set({ earthquakes: quakes }),
   setActiveView: (view) => set({ activeView: view }),
@@ -161,4 +181,5 @@ export const useMetricsStore = create<MetricsState>((set) => ({
   setSelectedFlight: (flight) => set({ selectedFlight: flight }),
   setSelectedSatellite: (sat) => set({ selectedSatellite: sat }),
   setSelectedISS: (open) => set({ selectedISS: open }),
+  setApiStatus: (status) => set({ apiStatus: status }),
 }));
