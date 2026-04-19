@@ -1,5 +1,5 @@
 import { useMetricsStore } from '../store/useMetricsStore';
-import type { Flight, Satellite, NewsEvent, TorNode, CryptoWhale } from '../store/useMetricsStore';
+import type { Flight, Satellite, NewsEvent, TorNode } from '../store/useMetricsStore';
 import * as satellite from 'satellite.js';
 
 // === DEPREMLER ===
@@ -50,7 +50,8 @@ export const fetchFlights = async (bounds?: { lamin: number; lomin: number; lama
     useMetricsStore.getState().setApiStatus({
       activeProvider: activeSource === 'SIMULATED' ? '⚠️ SIMULATED ⚠️' : activeSource,
       providers: providers,
-      remainingCredits: remainingCredits !== undefined ? remainingCredits : currentStatus.remainingCredits
+      remainingCredits: remainingCredits !== undefined ? remainingCredits : currentStatus.remainingCredits,
+      currentBounds: currentStatus.currentBounds
     });
 
     const flights: Flight[] = [];

@@ -6,7 +6,6 @@ import { config as dotenvConfig } from 'dotenv'
 dotenvConfig();
 
 // --- ShadowNet V7 Multi-Service Proxy ---
-const CACHE_TTL = 60000;
 const caches: any = {
   flights: { data: { ac: [] }, lastFetch: 0 },
   satellites: { data: [], lastFetch: 0 },
@@ -76,7 +75,6 @@ const shadowProxyPlugin = () => ({
       
       if (!caches.flights.global || now - caches.flights.global.lastFetch > GLOBAL_TTL) {
         let success = false;
-        const providerReport: any[] = [];
         const token = await getOpenSkyToken();
         const providers = [
           { name: 'OPENSKY', url: 'https://opensky-network.org/api/states/all', auth: true },
@@ -94,7 +92,7 @@ const shadowProxyPlugin = () => ({
 
             const response = await fetch(p.url, { headers });
             if (response.ok) {
-              const rawData = await response.json();
+              const rawData = (await response.json()) as any;
               const credits = response.headers.get('X-Rate-Limit-Remaining');
               
               caches.flights.global = {
@@ -199,7 +197,7 @@ const shadowProxyPlugin = () => ({
       if (Date.now() - caches.tor.lastFetch > 600000) {
         fetch('https://onionoo.torproject.org/details?type=relay&running=true&limit=30&fields=fingerprint,nickname,country_name,latitude,longitude')
           .then(r => r.json())
-          .then(data => {
+          .then((data: any) => {
             const filtered = (data.relays || []).filter((r: any) => r.latitude && r.longitude);
             if (filtered.length > 0) { caches.tor.data = filtered; caches.tor.lastFetch = Date.now(); }
           })
@@ -216,7 +214,7 @@ const shadowProxyPlugin = () => ({
         try {
           const response = await fetch('https://api.rss2json.com/v1/api.json?rss_url=https://rss.nytimes.com/services/xml/rss/nyt/World.xml');
           if (response.ok) {
-            const data = await response.json();
+            const data = (await response.json()) as any;
             if (data.items && data.items.length > 0) {
               caches.news.data = data.items.map((item: any) => ({
                 title: item.title,
@@ -274,4 +272,10 @@ const shadowProxyPlugin = () => ({
 
 export default defineConfig({
   plugins: [react(), shadowProxyPlugin()],
+  build: {
+    target: 'esnext'
+  },
+  worker: {
+    format: 'es'
+  }
 });

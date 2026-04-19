@@ -99,6 +99,8 @@ interface MetricsState {
   satellites: Satellite[];
   newsEvents: NewsEvent[];
   torNodes: TorNode[];
+  selectedFlight: Flight | null;
+  selectedSatellite: Satellite | null;
   selectedISS: boolean;
   activeView: 'GLOBE' | 'RADAR';
   apiStatus: {

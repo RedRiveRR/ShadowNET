@@ -2,13 +2,9 @@ import { useEffect, useRef, useState, useMemo } from 'react';
 import Globe from 'react-globe.gl';
 import * as THREE from 'three';
 import { useMetricsStore } from '../store/useMetricsStore';
-import { X, Plane as PlaneIcon, Gauge, Navigation, Globe as EarthIcon, Rocket, Zap, Crosshair, Play, Pause } from 'lucide-react';
+import { Navigation, Rocket, Zap, Crosshair, Play, Pause, X } from 'lucide-react';
 
 // === PAYLAŞILAN 3D KAYNAKLAR ===
-const planeGeom = new THREE.CylinderGeometry(0, 0.15, 1, 8); 
-const wingGeom = new THREE.BoxGeometry(1, 0.02, 0.3);
-const flightMatNormal = new THREE.MeshBasicMaterial({ color: '#facc15' });
-const flightMatSelected = new THREE.MeshBasicMaterial({ color: '#ffffff' });
 
 const satGeom = new THREE.BoxGeometry(0.3, 0.3, 0.3);
 const satPanelGeom = new THREE.PlaneGeometry(1, 0.25);
@@ -20,11 +16,11 @@ const issPanelGeom = new THREE.PlaneGeometry(0.7, 1.8);
 const issMat = new THREE.MeshBasicMaterial({ color: '#fbbf24' });
 
 export default function GlobeMap() {
-  const globeRef = useRef<any>();
+  const globeRef = useRef<any>(null);
   const [dimensions, setDimensions] = useState({ width: window.innerWidth, height: window.innerHeight });
   const { 
-    flights, iss, satellites, earthquakes, newsEvents,
-    selectedFlight, setSelectedFlight,
+    iss, satellites, earthquakes, newsEvents,
+    setSelectedFlight,
     selectedSatellite, setSelectedSatellite,
     selectedISS, setSelectedISS
   } = useMetricsStore();
@@ -122,7 +118,6 @@ export default function GlobeMap() {
         objectsData={objectsData}
         objectThreeObject={objectThreeObject}
         objectAltitude={(d: any) => d.__type === 'flight' ? 0.007 : d.__type === 'iss' ? 0.2 : (d.alt || 0.12)}
-        objectTransitionDuration={0} // Manuel mutasyon için kütüphane animasyonunu kapat
         onObjectClick={(obj: any) => {
           setSelectedFlight(null); setSelectedSatellite(null); setSelectedISS(false);
           if (obj.__type === 'flight') setSelectedFlight(obj);
