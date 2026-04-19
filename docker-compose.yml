@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  shadownet:
+    build: .
+    ports:
+      - "5173:5173"
+    env_file:
+      - .env
+    volumes:
+      - ./src:/app/src
+      - ./public:/app/public
+    restart: unless-stopped
+    labels:
+      - "com.shadownet.description=Global Intelligence & Tactical Radar"
