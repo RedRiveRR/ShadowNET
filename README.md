@@ -1,35 +1,32 @@
-# 🌐 ShadowNet V10.0 — Global Maritime Recon & Intelligence
+# 🌐 ShadowNet V11.0 — Global Maritime Recon & Hardened Intelligence
 
 ShadowNet, küresel güvenlik anomalilerini, jeopolitik çatışmaları ve stratejik varlıkları gerçek zamanlı olarak izleyen, hibrit AI ile güçlendirilmiş bir durumsal farkındalık terminalidir.
 
-V10.0 sürümüyle birlikte ShadowNet, yüksek hacimli deniz trafiği takibini (AIS) ana terminalden ayırarak özel bir **2D Maritime Radar** mimarisine taşınmış ve tam stabiliteye kavuşmuştur.
+V11.0 sürümüyle birlikte ShadowNet, mimarisini tamamen **Hardened Singleton** yapısına taşıyarak veri akışını sabitlemiş ve çoklu sekme desteği ile taktiksel veri derinliğini zirveye çıkarmıştır.
 
 ---
 
-## 🚀 V10.0 "Maritime Recon" Yenilikleri
+## 🚀 V11.0 "Hardened Singleton" Yenilikleri
 
-### ⚓ 2D Maritime Radar (Beta) - [NEW]
-Yüzlerce geminin anlık takibi için optimize edilmiş, yüksek performanslı taktiksel radar katmanı:
-- **60 FPS Optimizasyonu:** Gemi verileri React'in render döngüsünden izole edilerek doğrudan Canvas motoru üzerinden işlenir.
-- **Smart Persistence (TTL):** AIS yayınındaki kesintilere karşı 10 dakikalık "Görünürlük Ömrü" (TTL) sistemi ile gemiler radarda sabit kalır.
-- **Taktiksel Arayüz:** Gemi tipi, MMSI, hız, rota ve bayrak bilgileri için özel durumsal paneller.
-- **Harita Sınır Kilidi:** Operasyonel alanın dışına taşmayı engelleyen akıllı koordinat ve zoom kısıtlamaları (1x-100x).
+### ⚓ 2D Maritime Radar (Optimized)
+Yüzlerce geminin anlık takibi için yeniden optimize edilmiş taktiksel radar katmanı:
+- **30 FPS Performance Throttle:** GPU yükünü %50 azaltan sabit FPS kontrolü ve gölgesiz (shadow-less) render motoru ile sıfır kasma.
+- **Active Signal Counter:** Radardaki canlı gemi sayısını anlık olarak HUD üzerinde gösteren telemetri sayacı.
+- **Bilingual Interface (EN/TR):** Kritik sistem ve veri kapsama uyarıları için tam Türkçe ve İngilizce desteği.
+- **V11 Singleton Relay:** Tüm tarayıcı sekmelerinin tek bir güvenli bağlantıyı paylaştığı, rate-limit (429) korumalı WebSocket mimarisi.
 
-### 🧠 Otonom AI Intelligence
-- **Dinamik Coğrafi Konumlama (Geocoding):** Haber ve istihbarat başlıklarındaki jeopolitik veri çekilerek, Tensor-Core destekli yapay zeka tarafından koordinatlara dönüştürülür.
-- **Tehdit Analizi (GDELT):** GDELT verilerinden gelen haberler AI tarafından puanlanır ve riskli olaylar 3D küre üzerinde kırmızı halkalarla 'Pulsating (Titreşen)' uyarılara dönüşür.
-
-### 📍 GDELT Super-Query 
-- **Veri Tahkimatı:** Askeri, Siber, Nükleer, Diplomasi ve Terörizm başlıklarında 10 farklı kategoride anlık istihbarat hattı.
-- **Anti-Flicker:** Veri akışındaki titremeleri engellemek için 1 saniyelik "Buffer (Tampon)" güncelleme döngüsü.
+### 🧠 Advanced AI & Intel Engine
+- **Quadruple Intel Volume:** GDELT üzerinden çekilen haber hacmi 4 katına çıkarıldı. Artık 250+ makale aynı anda işlenebilir.
+- **Genişletilmiş Kategoriler:** Finans, Enerji, Sınır Güvenliği ve İHA/SİHA (Drone/Missile) aktiviteleri için yeni takip keyword'leri eklendi.
+- **Bilingual Warnings:** Çatışma bölgelerindeki veri kısıtlamaları için dinamik ve belirgin çift dilli uyarı panelleri.
 
 ---
 
 ## 🛠️ Teknik Mimari
 
-1.  **Vite Master Proxy (Server-Side):** GDELT, AIS Stream, OpenSky ve Tor API'larını güvenli bir şekilde yönetir.
-2.  **ML Web Worker (Client-Side):** Yapay zeka hesaplamalarını ana arayüzü yormadan arka planda (Worker Thread) yönetir.
-3.  **Hybrid Visualization Engine:** 3D Globe (Jeopolitik) ve 2D Canvas Radar (Maritime) arasında kesintisiz geçiş.
+1.  **Hardened Singleton Proxy:** GDELT, AIS Stream (WebSocket), OpenSky ve Tor verilerini tek bir kanal üzerinden yöneterek IP ban riskini minimize eder.
+2.  **ML Web Worker (Client-Side):** Yapay zeka hesaplamalarını (Duygu analizi ve kategorizasyon) ana arayüzü yormadan arka planda yönetir.
+3.  **Hybrid Visualization Engine:** 3D Globe (Küresel Tehditler) ve 2D Canvas Radar (Yerel Deniz Trafiği) arasında kesintisiz taktiksel geçiş.
 
 ---
 
@@ -42,20 +39,20 @@ npm install
 # Geliştirme sunucusunu başlat
 npm run dev
 
-# Üretim sürümü için derle (Vite + Rolldown)
+# Üretim sürümü için derle
 npm run build
 ```
 
 ---
 
-## 🔐 Güvenlik ve Gizlilik
+## 🔐 Güvenlik ve Uyumluluk
 
-- **Edge AI:** ShadowNet AI bileşenleri hiçbir veriyi dış sunucuya göndermez. Analiz ve Geocoding tamamen yerel tarayıcıda gerçekleşir.
-- **Proxy Integrity:** Tüm API anahtarları sunucu tarafındaki `.env` dosyasında saklanır.
+- **Local AI Analysis:** ShadowNet AI bileşenleri hiçbir veriyi dış sunucuya göndermez. Analiz tamamen yerel tarayıcıda gerçekleşir.
+- **Strategic Data Notice:** Çatışma bölgeleri (Karadeniz, Kızıldeniz) için kısıtlama uyarıları arayüz düzeyinde şeffafça sunulur.
 
 ---
 
-> [!WARNING]
-> **Beta Status**: Maritime Radar (AIS) modülü şu an Beta aşamasındadır. Veri akışında anlık gecikmeler veya UI pürüzleri yaşanabilir.
+> [!IMPORTANT]
+> **V11 Stability**: Bu sürüm, IP-tabanlı kısıtlamaları (429) aşmak için Singleton mimarisini zorunlu kılar. En iyi performans için tek bir sekme kullanılması önerilir.
 
-**ShadowNet V10.0** — *Küreseli İzle, Taktiksel Odaklan.*
+**ShadowNet V11.0** — *Global Stability, Tactical Precision.*

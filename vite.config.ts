@@ -280,10 +280,10 @@ const shadowProxyPlugin = () => ({
           try {
             const url = new URL(GDELT_API);
             // Tüm kategorileri içeren devasa tekil sorgu
-            const combinedQuery = '(military OR army OR cyber OR hacking OR nuclear OR sanctions OR espionage OR maritime OR terrorism OR geopolitics OR conflict OR diplomacy OR ransomware) sourcelang:eng';
+            const combinedQuery = '(military OR army OR cyber OR hacking OR nuclear OR sanctions OR espionage OR maritime OR terrorism OR geopolitics OR conflict OR diplomacy OR ransomware OR finance OR energy OR election OR border OR missile OR drone) sourcelang:eng';
             url.searchParams.set('query', combinedQuery);
             url.searchParams.set('mode', 'artlist');
-            url.searchParams.set('maxrecords', '200'); // Tek seferde çek, rate limit'e takılma
+            url.searchParams.set('maxrecords', '250'); // Maximum volume
             url.searchParams.set('format', 'json');
             url.searchParams.set('sort', 'date');
             url.searchParams.set('timespan', '24h');
@@ -307,7 +307,7 @@ const shadowProxyPlugin = () => ({
                   const title = String(a.title || '').toLowerCase();
                   const url = String(a.url || '').toLowerCase();
                   return topic.k.some(keyword => title.includes(keyword) || url.includes(keyword));
-                }).slice(0, 15).map((a: any) => ({
+                }).slice(0, 25).map((a: any) => ({
                   title: String(a.title || '').slice(0, 300),
                   url: a.url || '',
                   source: String(a.domain || '').slice(0, 100),
@@ -363,77 +363,94 @@ const shadowProxyPlugin = () => ({
       res.end(JSON.stringify({ results: [] }));
     });
 
-    // 8. AIS WebSocket Relay (V10.0)
-    // Client wss://localhost:5173/api/ws/ais -> wss://stream.aisstream.io/v0/stream
+    // 8. AIS WebSocket Relay (V10.0 Singleton)
+    // Single upstream to aisstream.io shared across all browser tabs
     if (server.httpServer) {
+        // Persist across HMR restarts via global
+        const AIS = (global as any).__AIS_SINGLETON__ || {
+            upstream: null,
+            clients: new Set(),
+            connecting: false,
+            packetCount: 0
+        };
+        (global as any).__AIS_SINGLETON__ = AIS;
+
+        const AIS_KEY = process.env.AIS_STREAM_API_KEY || '';
+
+        const connectUpstream = async () => {
+            if (AIS.connecting || (AIS.upstream && AIS.upstream.readyState === 1)) return;
+            AIS.connecting = true;
+
+            const { WebSocket: WS } = await import('ws');
+            
+            try {
+                console.log('[AIS] Connecting single upstream to aisstream.io...');
+                const upstream = new WS('wss://stream.aisstream.io/v0/stream');
+
+                upstream.on('open', () => {
+                    console.log('[AIS] Upstream CONNECTED. Broadcasting to all clients.');
+                    AIS.upstream = upstream;
+                    AIS.connecting = false;
+                    upstream.send(JSON.stringify({
+                        APIKey: AIS_KEY,
+                        BoundingBoxes: [[[90, -180], [-90, 180]]],
+                        FilterMessageTypes: ["PositionReport"]
+                    }));
+                });
+
+                upstream.on('message', (msg: any) => {
+                    AIS.packetCount++;
+                    const str = msg.toString();
+                    AIS.clients.forEach((c: any) => {
+                        if (c.readyState === 1) c.send(str);
+                    });
+                });
+
+                upstream.on('close', (code: number, reason: string) => {
+                    console.warn(`[AIS] Upstream closed (${code}). Reconnecting in 15s...`);
+                    AIS.upstream = null;
+                    AIS.connecting = false;
+                    setTimeout(connectUpstream, 15000);
+                });
+
+                upstream.on('error', (err: any) => {
+                    console.error(`[AIS] Upstream error: ${err.message}`);
+                    AIS.connecting = false;
+                    AIS.upstream = null;
+                });
+            } catch (e) {
+                AIS.connecting = false;
+                setTimeout(connectUpstream, 15000);
+            }
+        };
+
+        // Traffic logger (only one globally)
+        if (!(global as any).__AIS_LOGGER__) {
+            (global as any).__AIS_LOGGER__ = true;
+            setInterval(() => {
+                if (AIS.packetCount > 0) {
+                    console.log(`[AIS] Traffic: ${AIS.packetCount} pkt/min | Clients: ${AIS.clients.size}`);
+                    AIS.packetCount = 0;
+                }
+            }, 60000);
+        }
+
         server.httpServer.on('upgrade', (req: any, socket: any, head: any) => {
             if (req.url === '/api/ws/ais') {
-                import('ws').then(({ WebSocketServer, WebSocket: WS }) => {
+                import('ws').then(({ WebSocketServer }) => {
                     const wss = new WebSocketServer({ noServer: true });
                     wss.handleUpgrade(req, socket, head, (ws: any) => {
-                        console.log('[AIS] Client connected to ShadowNet AIS Relay');
-                        let upstream: any = null;
-                        const AIS_KEY = process.env.AIS_STREAM_API_KEY || '';
-
-                        ws.on('message', (msg: Buffer) => {
-                          try {
-                            const data = JSON.parse(msg.toString());
-                            if (data.type === 'subscribe') {
-                              console.log('[AIS] Subscribing with BoundingBox:', JSON.stringify(data.boundingBoxes));
-                              
-                              if (upstream) {
-                                 console.log('[AIS] Closing existing upstream before re-subscription');
-                                 upstream.close();
-                              }
-
-                              console.log('[AIS] Attempting connection to aisstream.io...');
-                              upstream = new WS('wss://stream.aisstream.io/v0/stream');
-                              
-                              upstream.on('open', () => {
-                                console.log('[AIS] Upstream CONNECTED. Sending API key auth...');
-                                const subMsg = {
-                                  APIKey: AIS_KEY,
-                                  BoundingBoxes: data.boundingBoxes || [
-                                    [[90, -180], [-90, 180]]
-                                  ],
-                                  FilterMessageTypes: ["PositionReport"]
-                                };
-                                upstream.send(JSON.stringify(subMsg));
-                              });
-
-                              let logCounter = 0;
-                              upstream.on('message', (aisMsg: any) => {
-                                logCounter++;
-                                if (logCounter % 50 === 0) console.log(`[AIS] Received ${logCounter} packets`);
-                                
-                                if (ws.readyState === 1) { // OPEN
-                                  ws.send(aisMsg.toString());
-                                }
-                              });
-
-                              upstream.on('close', (code: number, reason: string) => {
-                                console.warn(`[AIS] Upstream CLOSED. Code: ${code}, Reason: ${reason}`);
-                                if (ws.readyState === 1) {
-                                  ws.send(JSON.stringify({ type: 'relay-status', status: 'closed', reason }));
-                                }
-                              });
-
-                              upstream.on('error', (err: any) => {
-                                console.error('[AIS] Upstream ERROR:', err);
-                                if (ws.readyState === 1) {
-                                  ws.send(JSON.stringify({ type: 'relay-status', status: 'error', error: err.message }));
-                                }
-                              });
-                            }
-                          } catch (e) {
-                            console.error('[AIS] Relay Message Error:', e);
-                          }
-                        });
-
+                        AIS.clients.add(ws);
+                        console.log(`[AIS] Client connected. Active: ${AIS.clients.size}`);
+                        
+                        ws.on('message', () => {}); // consume subscribe msg, we handle it globally
                         ws.on('close', () => {
-                          console.log('[AIS] Client disconnected');
-                          if (upstream) upstream.close();
+                            AIS.clients.delete(ws);
+                            console.log(`[AIS] Client disconnected. Active: ${AIS.clients.size}`);
                         });
+
+                        // Trigger upstream connection if not already alive
+                        connectUpstream();
                     });
                 }).catch((err: any) => {
                     console.error('[AIS] Failed to load WS module:', err);
@@ -441,6 +458,9 @@ const shadowProxyPlugin = () => ({
                 });
             }
         });
+
+        // Also start upstream connection immediately 
+        connectUpstream();
     }
   }
 });
