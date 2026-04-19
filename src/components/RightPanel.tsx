@@ -1,5 +1,6 @@
 import { useMetricsStore } from '../store/useMetricsStore';
 import { Plane, Globe, Activity, Rocket, Newspaper } from 'lucide-react';
+import { APP_NAME, APP_VERSION } from '../config';
 
 export default function RightPanel() {
   const { flights, earthquakes, iss, satellites, newsEvents } = useMetricsStore();
@@ -54,7 +55,7 @@ export default function RightPanel() {
       </div>
 
       <div style={{ marginTop: '0.5rem', padding: '1rem', borderTop: '1px solid rgba(255,255,255,0.1)', textAlign: 'center' }}>
-         <div className="mono" style={{ fontSize: '0.6rem', color: '#64748b', fontWeight: 'bold', letterSpacing: '1px' }}>SHADOWNET V8.0 // MASTER SYSTEMS</div>
+         <div className="mono" style={{ fontSize: '0.6rem', color: '#64748b', fontWeight: 'bold', letterSpacing: '1px' }}>{APP_NAME} V{APP_VERSION} // MASTER SYSTEMS</div>
       </div>
     </div>
   );

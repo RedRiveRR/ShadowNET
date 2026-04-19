@@ -1,29 +1,26 @@
-# 🌐 ShadowNet V9.0 — Global Intelligence & Autonomous Tactical Radar
+# 🌐 ShadowNet V9.5 — Global Intelligence & Tactical Radar
 
 ShadowNet, küresel güvenlik anomalilerini, jeopolitik çatışmaları ve stratejik varlıkları gerçek zamanlı olarak izleyen, tarayıcı tabanlı (in-browser) yapay zeka ile güçlendirilmiş hibrit bir durumsal farkındalık terminalidir.
 
-V9.0 sürümü ile birlikte ShadowNet, basit bir uçuş takip sisteminden otonom bir **Küresel İstihbarat Merkezi**'ne (Global Intelligence Hub) evrilmiştir.
+V9.5 sürümü ile birlikte ShadowNet, basit bir uçuş takip sisteminden otonom bir **Küresel İstihbarat Merkezi**'ne (Global Intelligence Hub) evrilmiştir.
 
 ---
 
-## 🚀 V9.0 "Global Intelligence" Yenilikleri
+## 🚀 V9.5 "Tactical Radar" Yenilikleri
 
-### 🧠 Otonom Yapay Zeka Motoru (ONNX & Transformers.js)
+### 🧠 Otonom Yapay Zeka & Geocoding Motoru
 ShadowNet, artık kullanıcının tarayıcısında (client-side) çalışan bağımsız bir yapay zeka motoruna sahiptir. 
-- **Sıfır Sunucu Maliyeti:** Tüm analizler kullanıcının yerel CPU/GPU donanımı kullanılarak Web Worker üzerinde gerçekleşir.
-- **Duygu ve Tehdit Analizi:** GDELT verilerinden gelen binlerce haber başlığı, `distilbert` ONNX modeli ile saniyeler içinde "Risk" ve "Tehdit" puanlamasına tabi tutulur.
+- **Dinamik Coğrafi Konumlama (Geocoding):** Haber ve istihbarat başlıklarındaki (örneğin; "Israel", "Russia", "USA") jeopolitik veri çekilerek, yapay zeka tarafından otonom olarak enlem ve boylam koordinatlarına dönüştürülür ve haritaya dinamik olarak işlenir.
+- **Tehdit Analizi:** GDELT verilerinden gelen haber başlıkları yapay zeka tarafından puanlanır. Aşırı riskli olaylar, 3D küre üzerinde ülkelerin üzerinde kırmızı 'Pulsating (Titreşen)' halkalara dönüşür.
 
-### 📍 GDELT Jeopolitik İstihbarat Hattı
-Dünyanın en kapsamlı açık veri projesi olan GDELT (Global Database of Events, Language, and Tone) ShadowNet'e entegre edildi.
-- **6 Ana İstihbarat Kanalı:** Askeri Hareketlilik, Siber Güvenlik, Nükleer Gelişmeler, Ekonomik Yaptırımlar, İstihbarat Faaliyetleri ve Denizcilik Güvenliği.
-- **Düşük Gecikmeli Proxy:** Master Hub üzerinden 15 dakikalık periyotlarla çekilen ham veri, AI motoru tarafından işlenerek haritaya yansıtılır.
+### 📍 GDELT Super-Query İstihbarat Hattı
+- **Rate-Limit Çözümü (Super-Query):** Sunucu arka planında GDELT API'nin ip engellemelerini aşan tekil devasa `(military OR cyber OR nuclear...)` birleşik sorgulama mimarisine geçilmiştir.
+- **Özel Kategorizasyon:** Askeri, Siber, Nükleer, Denizcilik vb. toplam 10 farklı konu başlığı anında filtre edilip haritaya dağıtılmaktadır.
 
 ### 🔴 İnteraktif 3D İstihbarat Katmanı
-3D Küre (Global Analytics) üzerindeki tüm görsel "nabızlar" artık etkileşimlidir:
-- **AI Threats:** Yapay zeka tarafından kritik riskli bulunan olaylar.
-- **Global Incidents:** Dünya basınından anlık küresel gelişmeler.
-- **Seismic Activity:** USGS üzerinden gelen gerçek zamanlı deprem verileri.
-- *Halkalara tıklandığında sol tarafta detaylı durum raporu ve kaynak linki görüntülenir.*
+3D Küre (Global Analytics) üzerindeki tüm görsel "nabızlar" artık tam etkileşimlidir:
+- **AI Threats & Intel Points:** Küreye düşen askeri, siber, diplomatik her bir haber noktasına tıklandığında sol altta kaynağa giden detaylı info-panel açılır.
+- **Global Incidents & Seismic Activity:** Depremler, küresel haberler ve AIS takip (gemiler) anında detaylarıyla tıklanabilir hale getirilmiştir.
 
 ---
 

@@ -1,161 +1,126 @@
 /**
- * ShadowNet V9.0 — ML Web Worker
- * Tarayıcı içinde ONNX tabanlı Duygu Analizi (Sentiment Analysis) çalıştırır.
- * Sunucu veya API gerektirmez: tüm model kullanıcının tarayıcı önbelleğinde saklanır.
+ * ShadowNet V10.0 — ML Web Worker (Neural Memory & Correlation)
  */
 
 import { pipeline, env } from '@xenova/transformers';
 
-// Transformers.js Konfigürasyonu
 env.allowLocalModels = false;
 env.useBrowserCache = true;
 
 // --- Mesaj Tipleri ---
-interface InitMessage {
-  type: 'init';
-  id: string;
-}
-
-interface AnalyzeMessage {
-  type: 'analyze-sentiment';
-  id: string;
-  texts: Array<{ articleId: string; text: string }>;
-}
-
-interface StatusMessage {
-  type: 'status';
-  id: string;
-}
+interface InitMessage { type: 'init'; id: string; }
+interface AnalyzeMessage { type: 'analyze-intelligence'; id: string; articles: Array<{ id: string; text: string }>; }
+interface StatusMessage { type: 'status'; id: string; }
 
 type MLWorkerMessage = InitMessage | AnalyzeMessage | StatusMessage;
 
-// --- Pipeline State ---
+// --- State ---
 let sentimentPipeline: any = null;
 let isLoading = false;
 let isReady = false;
 
-/**
- * Model yükleme: İlk çağrıda ~25MB ONNX modeli indirilir,
- * sonraki çağrılarda tarayıcı önbelleğinden yüklenir (~2 saniye).
- */
-async function loadSentimentModel(): Promise<void> {
-  if (sentimentPipeline || isLoading) return;
+async function loadModels(): Promise<void> {
+  if (isLoading) return;
   isLoading = true;
 
   try {
-    self.postMessage({ type: 'status-update', status: 'loading', message: 'AI model yükleniyor...' });
+    self.postMessage({ type: 'status-update', status: 'loading', message: 'AI Analiz motoru yükleniyor...' });
 
+    // 1. Sentiment Model (~25MB)
     sentimentPipeline = await pipeline(
       'sentiment-analysis',
-      'Xenova/distilbert-base-uncased-finetuned-sst-2-english',
-      {
-        progress_callback: (progress: { status: string; progress?: number }) => {
-          if (progress.status === 'progress' && progress.progress !== undefined) {
-            self.postMessage({
-              type: 'model-progress',
-              progress: Math.round(progress.progress),
-            });
-          }
-        },
-      }
+      'Xenova/distilbert-base-uncased-finetuned-sst-2-english'
     );
 
     isReady = true;
     isLoading = false;
-    self.postMessage({ type: 'status-update', status: 'ready', message: 'AI hazır.' });
-    console.log('[MLWorker] Sentiment model yüklendi ve hazır.');
+    self.postMessage({ type: 'status-update', status: 'ready', message: 'AI Analiz aktif.' });
   } catch (error) {
     isLoading = false;
-    console.error('[MLWorker] Model yükleme hatası:', error);
-    self.postMessage({ type: 'status-update', status: 'error', message: 'Model yüklenemedi.' });
+    self.postMessage({ type: 'status-update', status: 'error', message: 'Modeller yüklenemedi.' });
   }
 }
 
-/**
- * Batch Duygu Analizi:
- * Verilen metin dizisindeki her başlığı puanlar ve sonuçları ana thread'e geri gönderir.
- */
-async function analyzeSentiment(
-  texts: Array<{ articleId: string; text: string }>
-): Promise<Array<{ articleId: string; label: string; score: number }>> {
-  if (!sentimentPipeline) {
-    await loadSentimentModel();
-  }
-  if (!sentimentPipeline) {
-    throw new Error('Model yüklenmedi');
-  }
+async function processIntelligence(articles: Array<{ id: string; text: string }>) {
+  if (!isReady) await loadModels();
 
-  const results: Array<{ articleId: string; label: string; score: number }> = [];
+  const sentimentResults = [];
 
-  for (const item of texts) {
+  for (const article of articles) {
     try {
-      // Başlığı 512 karakterle sınırla (model token limiti)
-      const truncated = item.text.slice(0, 512);
-      const output = await sentimentPipeline(truncated);
-      const result = (output as Array<{ label: string; score: number }>)[0];
+      const truncated = article.text.slice(0, 512);
 
-      if (result) {
-        results.push({
-          articleId: item.articleId,
-          label: result.label.toLowerCase(),
-          score: result.score,
-        });
+      // 1. ⚠️ Strategic Safety Heuristic (Regex-Based Absolute Negative)
+      const NEGATIVE_KEYWORDS = [
+        'murder', 'killing', 'death', 'violence', 'attack', 'dead', 'killed', 'bloody', 'terror',
+        'genocide', 'war', 'conflict', 'bombing', 'bomb', 'victim', 'strike', 'missing', 'slaughter',
+        'cinayet', 'olum', 'ölüm', 'saldiri', 'saldırı', 'katliam', 'taciz', 'istismar', 'suicid',
+        'soykirim', 'soykırım', 'savas', 'savaş', 'catisma', 'çatışma', 'patlama', 'sehit', 'şehit'
+      ];
+      
+      // Kelimeleri regex ile ara (Boşluk ve özel karakter toleranslı)
+      const regex = new RegExp(`\\b(${NEGATIVE_KEYWORDS.join('|')})\\b`, 'i');
+      const containsExtremeNegative = regex.test(truncated);
+
+      if (containsExtremeNegative) {
+        console.log(`[AI-Safety] Heuristic trigger for: "${truncated.slice(0, 30)}..."`);
       }
-    } catch (e) {
-      console.warn(`[MLWorker] Analiz hatası (${item.articleId}):`, e);
-      results.push({
-        articleId: item.articleId,
-        label: 'negative',
-        score: 0.5,
+
+      // 2. Sentiment Analysis
+      const sentimentOutput = await sentimentPipeline(truncated);
+      let label = sentimentOutput[0].label.toLowerCase();
+      let score = sentimentOutput[0].score;
+
+      // Force Absolute Negative for extreme events
+      if (containsExtremeNegative) {
+        label = 'negative';
+        score = 1.0; // Perfect confidence for hard-coded safety triggers
+      }
+
+      sentimentResults.push({
+        articleId: article.id,
+        label: label,
+        score: score,
       });
+
+    } catch (e) {
+      console.warn(`[AIWorker] Processing error (${article.id}):`, e);
     }
   }
 
-  return results;
+  return { sentimentResults };
 }
 
-// --- Ana Mesaj İşleyici ---
 self.onmessage = async (event: MessageEvent<MLWorkerMessage>) => {
   const message = event.data;
 
   try {
     switch (message.type) {
-      case 'init': {
-        await loadSentimentModel();
+      case 'init':
+        await loadModels();
         self.postMessage({ type: 'init-result', id: message.id, ready: isReady });
         break;
-      }
 
-      case 'analyze-sentiment': {
-        self.postMessage({ type: 'status-update', status: 'processing', message: `${message.texts.length} makale analiz ediliyor...` });
-        const results = await analyzeSentiment(message.texts);
-        self.postMessage({
-          type: 'sentiment-result',
-          id: message.id,
-          results,
-        });
-        self.postMessage({ type: 'status-update', status: 'ready', message: 'AI hazır.' });
+      case 'analyze-intelligence':
+        self.postMessage({ type: 'status-update', status: 'processing', message: 'AI İstihbarat taranıyor...' });
+        try {
+          const { sentimentResults } = await processIntelligence(message.articles);
+          self.postMessage({ type: 'sentiment-result', id: message.id, results: sentimentResults });
+        } catch (error) {
+           console.error('[ML Worker] Analysis failed:', error);
+           self.postMessage({ type: 'status-update', status: 'error', message: 'Analiz hatası oluştu.' });
+        } finally {
+          self.postMessage({ type: 'status-update', status: 'ready', message: 'AI Analiz aktif.' });
+        }
         break;
-      }
 
-      case 'status': {
-        self.postMessage({
-          type: 'status-result',
-          id: message.id,
-          ready: isReady,
-          loading: isLoading,
-        });
+      case 'status':
+        self.postMessage({ type: 'status-result', id: message.id, ready: isReady, loading: isLoading });
         break;
-      }
     }
   } catch (error) {
-    self.postMessage({
-      type: 'error',
-      id: (message as { id?: string }).id,
-      error: error instanceof Error ? error.message : String(error),
-    });
+    self.postMessage({ type: 'error', id: (message as any).id, error: String(error) });
   }
 };
 
-// İlk sinyal
 self.postMessage({ type: 'worker-ready' });

@@ -1,12 +1,12 @@
 /**
- * ShadowNet V8.0 - System Integrity Check
+ * ShadowNet V9.0 - System Integrity Check
  * Bu araç, ShadowNet'in çalışması için gereken .env yapılandırmasını doğrular.
  */
 
 const fs = require('fs');
 const path = require('path');
 
-console.log('🌐 SHADOWNET V8.0 // PRE-FLIGHT SYSTEM CHECK');
+console.log('🌐 SHADOWNET V9.0 // PRE-FLIGHT SYSTEM CHECK');
 console.log('-------------------------------------------');
 
 const envPath = path.join(__dirname, '.env');
@@ -23,7 +23,10 @@ const lines = envContent.split('\n');
 
 const requiredKeys = [
     'OPENSKY_CLIENT_ID',
-    'OPENSKY_CLIENT_SECRET'
+    'OPENSKY_CLIENT_SECRET',
+    'AIS_STREAM_API_KEY',
+    'OTX_API_KEY',
+    'CLOUDFLARE_API_TOKEN'
 ];
 
 let missing = 0;

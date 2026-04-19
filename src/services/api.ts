@@ -2,6 +2,7 @@ import { useMetricsStore } from '../store/useMetricsStore';
 import type { Flight, Satellite, NewsEvent, TorNode } from '../store/useMetricsStore';
 import type { IntelArticle } from '../store/useMetricsStore';
 import { initMLWorker, analyzeIntelSentiment } from './ml-manager';
+import { aisService } from './ais-service';
 import * as satellite from 'satellite.js';
 
 // === DEPREMLER ===
@@ -315,43 +316,139 @@ export const fetchIntelEvents = async () => {
     const response = await fetch('/api/data/intel');
     if (response.ok) {
       const data = await response.json();
-      const allArticles: IntelArticle[] = [];
+      const articleMap = new Map<string, IntelArticle>();
 
       if (data.topics && Array.isArray(data.topics)) {
-        for (const topic of data.topics) {
+        // V10.2: Genişletilmiş ve Dengelenmiş Konu Önceliği
+        const priorityOrder = [
+          'cyber', 'nuclear', 'sanctions', 'terrorism', 
+          'geopolitics', 'military', 'maritime', 'intelligence', 
+          'conflict', 'diplomacy'
+        ];
+        
+        const sortedTopics = [...data.topics].sort((a, b) => {
+          const indexA = priorityOrder.indexOf(a.id);
+          const indexB = priorityOrder.indexOf(b.id);
+          return (indexA === -1 ? 99 : indexA) - (indexB === -1 ? 99 : indexB);
+        });
+
+        for (const topic of sortedTopics) {
           if (topic.articles && Array.isArray(topic.articles)) {
             for (const article of topic.articles) {
-              allArticles.push({
-                id: `intel-${topic.id}-${allArticles.length}`,
+              const rawTitle = article.title || '';
+              const rawUrl = article.url || '';
+              
+              const cleanTitle = rawTitle.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 100);
+              const cleanUrl = rawUrl.toLowerCase().split('?')[0].replace(/\/$/, '');
+              
+              const uniqueKey = cleanUrl || cleanTitle;
+              if (!uniqueKey || articleMap.has(uniqueKey)) continue;
+
+              const GEO = {
+                'iran':[32.4279,53.688],'israel':[31.0461,34.8516],'gaza':[31.3268,34.3015],
+                'palestine':[31.9522,35.2332],'russia':[61.524,105.3188],'ukraine':[48.3794,31.1656],
+                'moscow':[55.7558,37.6173],'kyiv':[50.4501,30.5234],'taiwan':[23.6978,120.9605],
+                'china':[35.8617,104.1954],'beijing':[39.9042,116.4074],'usa':[37.0902,-95.7129],
+                'washington':[38.9072,-77.0369],'syria':[34.8021,38.9968],'yemen':[15.5527,48.5164],
+                'lebanon':[33.8547,35.8623],'korea':[37.665,127.0264],'japan':[36.2048,138.2529],
+                'germany':[51.1657,10.4515],'france':[46.2276,2.2137],'uk':[55.3781,-3.436],
+                'london':[51.5074,-0.1278],'turkey':[38.9637,35.2433],'egypt':[26.8206,30.8025],
+                'india':[20.5937,78.9629],'pakistan':[30.3753,69.3451],'afghanistan':[33.9391,67.7099],
+                'africa':[8.7832,34.5085], 'europe':[54.5260,15.2551], 'nato':[50.8503,4.3517],
+                'us':[37.0902,-95.7129], 'iraq':[33.2232,43.6793]
+              };
+              let finalLat, finalLng;
+              const searchTitle = rawTitle.toLowerCase();
+              const searchUrl = cleanUrl;
+              for(const [k, v] of Object.entries(GEO)) {
+                // Word boundary check to avoid "house" matching "us"
+                const regex = new RegExp(`\\b${k}\\b`, 'i');
+                if(regex.test(searchTitle) || searchUrl.includes(k)) {
+                  finalLat = v[0]; finalLng = v[1]; break;
+                }
+              }
+
+              articleMap.set(uniqueKey, {
+                id: `intel-${btoa(encodeURIComponent(uniqueKey)).slice(0, 16)}`,
                 topicId: topic.id,
-                title: article.title || '',
-                url: article.url || '',
+                title: rawTitle.trim(),
+                url: rawUrl,
                 source: article.source || '',
                 date: article.date || '',
                 tone: article.tone || 0,
+                ...(finalLat ? {lat: finalLat, lng: finalLng} : {})
               });
             }
           }
         }
       }
 
+      const allArticles = Array.from(articleMap.values());
       useMetricsStore.getState().setIntelEvents(allArticles);
-      console.log(`[Intel] ${allArticles.length} makale yüklendi, AI analizine gönderiliyor...`);
+      
+      if (allArticles.length === 0) {
+        console.warn('[Intel] 0 makale alındı. Ağ hatası olabilir, 15 saniye sonra tekrar deneniyor...');
+        setTimeout(fetchIntelEvents, 15000);
+        return;
+      }
 
-      // Yapay Zeka Duygu Analizi
+      console.log(`[Intel] ${allArticles.length} özgün makale yüklendi, AI analizine gönderiliyor...`);
+
+      // Yapay Zeka Duygu Analizi ve Konumlandırma (Harita uyarıları için gerekli)
       if (allArticles.length > 0) {
         analyzeIntelSentiment(allArticles).catch((e) =>
           console.warn('[Intel] AI analiz hatası:', e)
         );
       }
+    } else {
+      console.warn('[Intel] Proxy geçersiz veri döndürdü, 15 saniye sonra tekrar denenecek...');
+      setTimeout(fetchIntelEvents, 15000);
     }
   } catch (e) {
-    console.error('[Intel] GDELT Hatası:', e);
+    console.error('[Intel] GDELT/Proxy Hatası:', e);
+    setTimeout(fetchIntelEvents, 15000);
   }
+};
+
+// === SİSTEM KONTROL VE REBOOT ===
+let activeIntervals: number[] = [];
+
+export const stopDataStreams = () => {
+  activeIntervals.forEach(clearInterval);
+  activeIntervals = [];
+  aisService.stop();
+  if (binanceWs) {
+    binanceWs.close();
+    binanceWs = null;
+  }
+  console.log('[System] Veri akışları durduruldu.');
+};
+
+export const rebootSystem = async () => {
+  console.log('[System] Taktiksel Reboot başlatılıyor...');
+  
+  // 1. Akışları Durdur
+  stopDataStreams();
+  
+  // 2. State Temizle
+  useMetricsStore.getState().resetStore();
+  
+  // 3. AI Motorunu Kapat
+  const { terminateMLWorker } = await import('./ml-manager');
+  terminateMLWorker();
+  
+  // 4. Yeniden Başlat
+  setTimeout(() => {
+    startDataStreams();
+    console.log('[System] Reboot tamamlandı. Sistem NOMINAL.');
+  }, 1000);
 };
 
 // === SİSTEM BAŞLATICI ===
 export const startDataStreams = () => {
+  // Mevcut akışlar varsa temizle (Double-start önlemi)
+  stopDataStreams();
+
   fetchEarthquakes();
   fetchFlights();
   fetchISS();
@@ -362,30 +459,29 @@ export const startDataStreams = () => {
   fetchOTX();
   fetchRadar();
   connectCryptoWebSocket();
+  aisService.start();
 
-  setInterval(fetchEarthquakes, 60000);
-  setInterval(() => {
+  activeIntervals.push(window.setInterval(fetchEarthquakes, 60000));
+  activeIntervals.push(window.setInterval(() => {
     const bounds = useMetricsStore.getState().apiStatus.currentBounds;
     fetchFlights(bounds || undefined);
-  }, 10000); // 10 saniyede bir proxy'den (Master Hub) filtrelenmiş veriyi çek
-  setInterval(fetchISS, 3000);
-  setInterval(fetchSatellites, 300000);
-  setInterval(fetchNews, 120000);
-  setInterval(fetchTorNodes, 120000);
-  setInterval(fetchNVD, 90000);
-  setInterval(fetchOTX, 60000);
-  setInterval(fetchRadar, 120000);
-  setInterval(propagateSatellites, 2000);
-  setInterval(() => useMetricsStore.getState().clearOldCryptoWhales(), 5000);
+  }, 10000));
+  activeIntervals.push(window.setInterval(fetchISS, 3000));
+  activeIntervals.push(window.setInterval(fetchSatellites, 300000));
+  activeIntervals.push(window.setInterval(fetchNews, 120000));
+  activeIntervals.push(window.setInterval(fetchTorNodes, 120000));
+  activeIntervals.push(window.setInterval(fetchNVD, 90000));
+  activeIntervals.push(window.setInterval(fetchOTX, 60000));
+  activeIntervals.push(window.setInterval(fetchRadar, 120000));
+  activeIntervals.push(window.setInterval(propagateSatellites, 2000));
+  activeIntervals.push(window.setInterval(() => useMetricsStore.getState().clearOldCryptoWhales(), 5000));
   
-  // WebSocket yeniden bağlantı
-  setInterval(() => {
+  activeIntervals.push(window.setInterval(() => {
     if (!binanceWs || binanceWs.readyState === WebSocket.CLOSED) connectCryptoWebSocket();
-  }, 5000);
+  }, 5000));
 
-  // V9.0: ML Worker ve İstihbarat Akışı
   initMLWorker();
   fetchIntelEvents();
-  setInterval(fetchIntelEvents, 900000); // 15 dakikada bir
+  activeIntervals.push(window.setInterval(fetchIntelEvents, 900000));
 };
 

@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState, useMemo } from 'react';
+import { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import Globe from 'react-globe.gl';
 import * as THREE from 'three';
 import { useMetricsStore } from '../store/useMetricsStore';
-import { Navigation, Rocket, Zap, Crosshair, Play, Pause, X, ExternalLink } from 'lucide-react';
+import { Navigation, Rocket, Zap, Crosshair, Play, Pause, X, ExternalLink, Database, Activity } from 'lucide-react';
 
 // === PAYLAŞILAN 3D KAYNAKLAR ===
 
@@ -19,17 +19,19 @@ export default function GlobeMap() {
   const globeRef = useRef<any>(null);
   const [dimensions, setDimensions] = useState({ width: window.innerWidth, height: window.innerHeight });
   const { 
-    iss, satellites, earthquakes, newsEvents,
+    iss, satellites, earthquakes, newsEvents, intelEvents,
     setSelectedFlight,
     selectedSatellite, setSelectedSatellite,
     selectedISS, setSelectedISS,
-    threatAlerts, aiStatus
+    threatAlerts, aiStatus,
+    vessels, selectedVessel, setSelectedVessel
   } = useMetricsStore();
   
   const [isRotating, setIsRotating] = useState(true);
   const [selectedThreat, setSelectedThreat] = useState<any>(null);
   const [selectedEarthquake, setSelectedEarthquake] = useState<any>(null);
   const [selectedNews, setSelectedNews] = useState<any>(null);
+  const [selectedIntel, setSelectedIntel] = useState<any>(null);
 
 
 
@@ -59,7 +61,7 @@ export default function GlobeMap() {
     return data;
   }, [satellites, iss]);
 
-  const objectThreeObject = (d: any) => {
+  const objectThreeObject = useCallback((d: any) => {
     let group: THREE.Group;
 
     if (d.__type === 'iss') {
@@ -89,7 +91,7 @@ export default function GlobeMap() {
     }
 
     return group;
-  };
+  }, []);
 
   const ringsData = useMemo(() => {
     const rings: any[] = [];
@@ -107,12 +109,17 @@ export default function GlobeMap() {
       maritime:      { lat: 10.0, lng: 114.0 },    // Güney Çin Denizi
     };
     (threatAlerts || []).forEach(t => {
+      const dbLat = (t as any).lat;
+      const dbLng = (t as any).lng;
       const coords = topicCoords[t.topicId];
-      if (coords) {
+      const finalLat = dbLat !== undefined ? dbLat : coords?.lat;
+      const finalLng = dbLng !== undefined ? dbLng : coords?.lng;
+      
+      if (finalLat !== undefined && finalLng !== undefined) {
         rings.push({
           ...t, // Orijinal veriyi taşı (tıklama için)
-          lat: coords.lat,
-          lng: coords.lng,
+          lat: finalLat,
+          lng: finalLng,
           maxR: Math.max(t.severity * 8, 3),
           propagationSpeed: 3,
           repeatPeriod: 600,
@@ -142,10 +149,36 @@ export default function GlobeMap() {
       maritime:      { lat: 10.0, lng: 114.0 },
     };
 
+    const topicColors: Record<string, string> = {
+      military: '#ef4444', cyber: '#a855f7', nuclear: '#f59e0b',
+      sanctions: '#3b82f6', intelligence: '#06b6d4', maritime: '#22d3ee',
+      terrorism: '#dc2626', geopolitics: '#fbbf24', conflict: '#f97316',
+      diplomacy: '#60a5fa'
+    };
+
+    // 0. Intel Noktaları
+    const intelPoints = (intelEvents || []).map(i => {
+      const dbLat = (i as any).lat;
+      const dbLng = (i as any).lng;
+      const fallback = topicCoords[i.topicId];
+      const finalLat = dbLat !== undefined ? dbLat : fallback?.lat;
+      const finalLng = dbLng !== undefined ? dbLng : fallback?.lng;
+      
+      return {
+        ...i,
+        lat: finalLat, lng: finalLng,
+        size: 0.5, color: topicColors[i.topicId] || '#94a3b8', __type: 'intel'
+      };
+    }).filter((p: any) => p.lat != null && p.lng != null);
+
     // 1. Tehdit Noktaları
     const threatPoints = (threatAlerts || []).map(t => {
+      const dbLat = (t as any).lat;
+      const dbLng = (t as any).lng;
       const coords = topicCoords[t.topicId];
-      return { ...t, lat: coords?.lat || 0, lng: coords?.lng || 0, size: 0.6, color: '#ef4444', __type: 'threat' };
+      const finalLat = dbLat !== undefined ? dbLat : (coords?.lat || 0);
+      const finalLng = dbLng !== undefined ? dbLng : (coords?.lng || 0);
+      return { ...t, lat: finalLat, lng: finalLng, size: 0.6, color: '#ef4444', __type: 'threat' };
     }).filter(p => p.lat !== 0);
 
     // 2. Deprem Noktaları
@@ -158,8 +191,14 @@ export default function GlobeMap() {
       ...n, size: 0.5, color: '#ef4444', __type: 'news'
     })).filter(p => p.lat != null && p.lng != null);
 
-    return [...threatPoints, ...quakePoints, ...newsPoints];
-  }, [threatAlerts, earthquakes, newsEvents]);
+    // 4. Gemi (Maritime) Noktaları (V10.0)
+    const vesselPoints = (vessels || []).map(v => ({
+      ...v, size: 0.4, color: '#2dd4bf', __type: 'vessel'
+    }));
+
+    return [...intelPoints, ...threatPoints, ...quakePoints, ...newsPoints, ...vesselPoints];
+  }, [threatAlerts, earthquakes, newsEvents, intelEvents, vessels]);
+
 
   return (
     <div style={{ position: 'absolute', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: 1, overflow: 'hidden' }}>
@@ -199,10 +238,14 @@ export default function GlobeMap() {
           setSelectedThreat(null);
           setSelectedEarthquake(null);
           setSelectedNews(null);
+          setSelectedVessel(null);
+          setSelectedIntel(null);
 
           if (pt.__type === 'threat') setSelectedThreat(pt);
           if (pt.__type === 'earthquake') setSelectedEarthquake(pt);
           if (pt.__type === 'news') setSelectedNews(pt);
+          if (pt.__type === 'vessel') setSelectedVessel(pt);
+          if (pt.__type === 'intel') setSelectedIntel(pt);
         }}
         onGlobeClick={() => { 
           setSelectedFlight(null); 
@@ -211,6 +254,8 @@ export default function GlobeMap() {
           setSelectedThreat(null);
           setSelectedEarthquake(null);
           setSelectedNews(null);
+          setSelectedVessel(null);
+          setSelectedIntel(null);
         }}
       />
 
@@ -346,6 +391,33 @@ export default function GlobeMap() {
           </div>
         )}
 
+        {selectedIntel && (
+          <div className="intel-card" style={{ pointerEvents: 'auto', background: 'rgba(15, 23, 42, 0.9)', backdropFilter: 'blur(12px)', border: '1px solid #06b6d4', borderRadius: '12px', padding: '16px', width: '320px', boxShadow: '0 8px 32px rgba(6, 182, 212, 0.2)', animation: 'slideRight 0.3s ease-out' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+              <div>
+                <div style={{ fontSize: '0.6rem', color: '#22d3ee', fontWeight: 'bold', letterSpacing: '1px' }}>
+                  GEOPOLITICAL INTEL: {selectedIntel.topicId?.toUpperCase()}
+                </div>
+                <div style={{ fontSize: '1rem', fontWeight: 'bold', color: '#fff', marginTop: '4px', lineHeight: '1.4' }}>
+                  {selectedIntel.source}
+                </div>
+              </div>
+              <button onClick={() => setSelectedIntel(null)} style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer' }}><X size={16} /></button>
+            </div>
+            <div style={{ fontSize: '0.8rem', color: '#cbd5e1', marginBottom: '12px', lineHeight: '1.4' }}>
+              {selectedIntel.title}
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '10px' }}>
+              <span style={{ fontSize: '0.65rem', color: '#94a3b8' }}>{selectedIntel.date}</span>
+              {selectedIntel.url && (
+                <a href={selectedIntel.url} target="_blank" rel="noreferrer" style={{ fontSize: '0.7rem', color: '#38bdf8', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  Kaynak <ExternalLink size={10} />
+                </a>
+              )}
+            </div>
+          </div>
+        )}
+
         {selectedNews && (
           <div className="intel-card" style={{ pointerEvents: 'auto', background: 'rgba(15, 23, 42, 0.85)', backdropFilter: 'blur(12px)', border: '1px solid #ef4444', borderRadius: '12px', padding: '16px', width: '300px', boxShadow: '0 8px 32px rgba(0,0,0,0.5)', animation: 'slideRight 0.3s ease-out' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
@@ -360,6 +432,24 @@ export default function GlobeMap() {
                   Detaya Git <ExternalLink size={10} />
                 </a>
               )}
+            </div>
+          </div>
+        )}
+
+        {selectedVessel && (
+          <div className="intel-card" style={{ pointerEvents: 'auto', background: 'rgba(15, 23, 42, 0.85)', backdropFilter: 'blur(12px)', border: '1px solid #2dd4bf', borderRadius: '12px', padding: '16px', width: '280px', boxShadow: '0 8px 32px rgba(45, 212, 191, 0.2)', animation: 'slideRight 0.3s ease-out' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
+              <div><div style={{ fontSize: '0.6rem', color: '#2dd4bf', fontWeight: 'bold' }}>MARITIME ASSET</div><div style={{ fontSize: '1.2rem', fontWeight: 'bold', color: '#fff' }}>{selectedVessel.name.slice(0, 15)}</div></div>
+              <button onClick={() => setSelectedVessel(null)} style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer' }}><X size={16} /></button>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+              <DataBlock label="MMSI" value={selectedVessel.mmsi} icon={<Database size={10}/>} color="#2dd4bf" />
+              <DataBlock label="SPEED" value={`${selectedVessel.speed} kn`} icon={<Zap size={10}/>} />
+              <DataBlock label="COURSE" value={`${selectedVessel.course}°`} icon={<Navigation size={10}/>} />
+              <DataBlock label="LAST SEE" value={new Date(selectedVessel.lastUpdate).toLocaleTimeString()} icon={<Activity size={10}/>} />
+            </div>
+            <div style={{ marginTop: '10px', fontSize: '0.65rem', color: '#94a3b8', background: 'rgba(0,0,0,0.2)', padding: '6px', borderRadius: '4px' }}>
+              FLAG: {selectedVessel.flag} // AIS STREAM: POSITION_REPORT
             </div>
           </div>
         )}

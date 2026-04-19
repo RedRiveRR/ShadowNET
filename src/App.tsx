@@ -8,8 +8,8 @@ import BottomDrawer from './components/BottomDrawer';
 import Legend from './components/Legend';
 import { startDataStreams } from './services/api';
 import { Globe as GlobeIcon, Crosshair } from 'lucide-react';
+import ErrorBoundary from './components/ErrorBoundary';
 import './App.css';
-
 function App() {
   const isStarted = useRef(false);
   const { activeView, setActiveView } = useMetricsStore();
@@ -41,15 +41,18 @@ function App() {
 
       {/* CONDITIONAL MAIN VIEW */}
       {activeView === 'GLOBE' ? (
-        <>
+        <ErrorBoundary>
           <GlobeMap />
           <LeftPanel />
           <RightPanel />
+          
           <Legend />
           <BottomDrawer />
-        </>
+        </ErrorBoundary>
       ) : (
-        <RadarMap2D />
+        <ErrorBoundary>
+          <RadarMap2D />
+        </ErrorBoundary>
       )}
     </div>
   );

@@ -53,8 +53,8 @@ export function initMLWorker(): void {
 
       // Worker hazır sinyali
       if (data.type === 'worker-ready') {
-        console.log('[ML] Worker başlatıldı');
-        // Hemen modeli yüklemeye başla
+        console.log('[ML] Neural Hub başlatıldı');
+        // Hemen modelleri yüklemeye başla
         const initId = generateId();
         worker?.postMessage({ type: 'init', id: initId });
         return;
@@ -91,38 +91,81 @@ export async function analyzeIntelSentiment(articles: IntelArticle[]): Promise<v
   if (articles.length === 0) return;
 
   const id = generateId();
-  const texts = articles.map((a) => ({ articleId: a.id, text: a.title }));
+  const texts = articles.map((a) => ({ id: a.id, text: a.title }));
 
   return new Promise((resolve) => {
     pendingCallbacks.set(id, (data) => {
       if (data.type === 'sentiment-result' && Array.isArray(data.results)) {
         const store = useMetricsStore.getState();
 
+        // 🛡️ TRIPLE LOCK: Manager-side Heuristic Redundancy
+        const SAFETY_KEYWORDS = [
+          'murder', 'killing', 'death', 'violence', 'attack', 'dead', 'killed', 'bloody', 'terror',
+          'genocide', 'war', 'conflict', 'bombing', 'bomb', 'victim', 'strike', 'missing', 'slaughter',
+          'soykirim', 'soykırım', 'savas', 'savaş', 'katliam', 'sehit', 'şehit'
+        ];
+
         // Mevcut makaleleri güncelle
         const updatedArticles = store.intelEvents.map((article) => {
           const result = data.results.find((r: any) => r.articleId === article.id);
-          if (result) {
+          
+          // Keyword bazlı zorunlu kontrol (Worker cache koruması)
+          const text = article.title.toLowerCase();
+          const isExtreme = SAFETY_KEYWORDS.some(kw => text.includes(kw));
+
+          if (result || isExtreme) {
             return {
               ...article,
-              sentimentScore: result.score,
-              sentimentLabel: result.label as 'positive' | 'negative',
+              sentimentScore: isExtreme ? 1.0 : result.score,
+              sentimentLabel: isExtreme ? 'negative' as const : (result.label as 'positive' | 'negative'),
             };
           }
           return article;
         });
         store.setIntelEvents(updatedArticles);
 
-        // %85+ "Negative" olanlar için ThreatAlert oluştur
+        // %85+ "Negative" olanlar için ThreatAlert oluştur + Konumlandırma
+        const GEO_DICTIONARY: Record<string, [number, number]> = {
+          'iran': [32.4279, 53.6880],
+          'israel': [31.0461, 34.8516],
+          'gaza': [31.3268, 34.3015],
+          'palestine': [31.9522, 35.2332],
+          'russia': [61.5240, 105.3188],
+          'ukraine': [48.3794, 31.1656],
+          'moscow': [55.7558, 37.6173],
+          'kyiv': [50.4501, 30.5234],
+          'taiwan': [23.6978, 120.9605],
+          'china': [35.8617, 104.1954],
+          'beijing': [39.9042, 116.4074],
+          'usa': [37.0902, -95.7129],
+          'washington': [38.9072, -77.0369],
+          'syria': [34.8021, 38.9968],
+          'yemen': [15.5527, 48.5164],
+          'lebanon': [33.8547, 35.8623],
+          'korea': [37.6650, 127.0264],  // kuzey/güney ikisi de bu bölgede
+          'japan': [36.2048, 138.2529]
+        };
+
         for (const result of data.results) {
           if (result.label === 'negative' && result.score >= 0.85) {
             const article = articles.find((a) => a.id === result.articleId);
             if (article) {
+              const textLower = article.title.toLowerCase();
+              let lat = 0, lng = 0;
+              for (const [key, coords] of Object.entries(GEO_DICTIONARY)) {
+                if (textLower.includes(key)) {
+                  [lat, lng] = coords;
+                  break;
+                }
+              }
+
               store.addThreatAlert({
                 id: `threat-${article.id}`,
                 title: article.title,
                 topicId: article.topicId,
                 severity: result.score,
                 time: Date.now(),
+                ...(lat !== 0 ? { lat, lng } : {})
               });
             }
           }
@@ -131,7 +174,7 @@ export async function analyzeIntelSentiment(articles: IntelArticle[]): Promise<v
       resolve();
     });
 
-    worker!.postMessage({ type: 'analyze-sentiment', id, texts });
+    worker!.postMessage({ type: 'analyze-intelligence', id, articles: texts });
   });
 }
 

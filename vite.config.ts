@@ -11,7 +11,8 @@ const caches: any = {
   satellites: { data: [], lastFetch: 0 },
   tor: { data: [], lastFetch: 0 },
   news: { data: [], lastFetch: 0 },
-  intel: { data: { topics: [] }, lastFetch: 0 }
+  intel: { data: { topics: [] }, lastFetch: 0 },
+  ais: { vessels: new Map(), lastFetch: 0 }
 };
 
 // --- OpenSky OAuth2 Token Management ---
@@ -80,7 +81,7 @@ const shadowProxyPlugin = () => ({
         const providers = [
           { name: 'OPENSKY', url: 'https://opensky-network.org/api/states/all', auth: true },
           { name: 'AIRPLANES', url: 'https://api.airplanes.live/v2/all', auth: false },
-          { name: 'ADSBONE', url: 'https://api.adsb.one/v2/all', auth: false }
+          { name: 'ADSB.ONE', url: 'https://api.adsb.one/v2/all', auth: false }
         ];
 
         for (const p of providers) {
@@ -88,7 +89,7 @@ const shadowProxyPlugin = () => ({
 
           try {
             console.log(`[MasterHub] Fetching NEW Global State from ${p.name}...`);
-            const headers: any = { 'User-Agent': 'Mozilla/5.0 ShadowNet/8.0 MasterHub' };
+            const headers: any = { 'User-Agent': 'Mozilla/5.0 ShadowNet/9.0 MasterHub' };
             if (p.auth && token) headers['Authorization'] = `Bearer ${token}`;
 
             const response = await fetch(p.url, { headers });
@@ -237,7 +238,7 @@ const shadowProxyPlugin = () => ({
       try {
         const response = await fetch('https://api.cloudflare.com/client/v4/radar/bgp/top/ases?limit=3&dateRange=1d', {
           headers: {
-            'Authorization': 'Bearer ' + (process.env.VITE_CLOUDFLARE_API_TOKEN || ''),
+            'Authorization': 'Bearer ' + (process.env.CLOUDFLARE_API_TOKEN || ''),
             'Content-Type': 'application/json'
           }
         });
@@ -255,12 +256,16 @@ const shadowProxyPlugin = () => ({
     // 6. GDELT Intelligence Feed (Jeopolitik İstihbarat)
     const GDELT_API = 'https://api.gdeltproject.org/api/v2/doc/doc';
     const INTEL_TOPICS = [
-      { id: 'military',     query: '(military exercise OR troop deployment OR airstrike) sourcelang:eng' },
-      { id: 'cyber',        query: '(cyberattack OR ransomware OR hacking OR "data breach") sourcelang:eng' },
-      { id: 'nuclear',      query: '(nuclear OR uranium enrichment OR IAEA) sourcelang:eng' },
-      { id: 'sanctions',    query: '(sanctions OR embargo OR "trade war" OR tariff) sourcelang:eng' },
-      { id: 'intelligence', query: '(espionage OR spy OR "intelligence agency" OR surveillance) sourcelang:eng' },
-      { id: 'maritime',     query: '(naval blockade OR piracy OR "strait of hormuz" OR warship) sourcelang:eng' },
+      { id: 'military',     k: ['military', 'army', 'troops', 'airstrike', 'weapons', 'defense'] },
+      { id: 'cyber',        k: ['cyber', 'hacking', 'ransomware', 'data breach', 'malware', 'cybersecurity'] },
+      { id: 'nuclear',      k: ['nuclear', 'uranium', 'iaea', 'atomic', 'nuclear weapon', 'missile'] },
+      { id: 'sanctions',    k: ['sanctions', 'embargo', 'tariff', 'trade war', 'economic pressure'] },
+      { id: 'intelligence', k: ['espionage', 'spy', 'intelligence', 'surveillance', 'cia', 'mi6', 'mossad'] },
+      { id: 'maritime',     k: ['navy', 'warship', 'maritime', 'piracy', 'south china sea', 'submarine'] },
+      { id: 'terrorism',    k: ['terrorism', 'terrorist', 'extremism', 'isis', 'al qaeda', 'bombing'] },
+      { id: 'geopolitics',  k: ['geopolitics', 'foreign policy', 'nato', 'g7', 'united nations', 'summit'] },
+      { id: 'conflict',     k: ['conflict', 'war', 'invasion', 'ceasefire', 'casualties', 'genocide'] },
+      { id: 'diplomacy',    k: ['diplomacy', 'treaty', 'ambassador', 'peace talks', 'negotiations', 'alliance'] },
     ];
 
     server.middlewares.use('/api/data/intel', async (_req: any, res: any) => {
@@ -268,60 +273,84 @@ const shadowProxyPlugin = () => ({
       const INTEL_TTL = 900000; // 15 dakika
 
       if (now - caches.intel.lastFetch > INTEL_TTL) {
-        console.log('[Proxy] Fetching GDELT Intelligence...');
-        const topicResults: any[] = [];
-
-        for (const topic of INTEL_TOPICS) {
+        caches.intel.lastFetch = now;
+        
+        const fetchAllTopics = async () => {
+          console.log('[Proxy] Fetching GDELT Intelligence (Combined Fast-Query)...');
           try {
             const url = new URL(GDELT_API);
-            url.searchParams.set('query', topic.query);
+            // Tüm kategorileri içeren devasa tekil sorgu
+            const combinedQuery = '(military OR army OR cyber OR hacking OR nuclear OR sanctions OR espionage OR maritime OR terrorism OR geopolitics OR conflict OR diplomacy OR ransomware) sourcelang:eng';
+            url.searchParams.set('query', combinedQuery);
             url.searchParams.set('mode', 'artlist');
-            url.searchParams.set('maxrecords', '10');
+            url.searchParams.set('maxrecords', '200'); // Tek seferde çek, rate limit'e takılma
             url.searchParams.set('format', 'json');
             url.searchParams.set('sort', 'date');
             url.searchParams.set('timespan', '24h');
 
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 15000); // 15s timeout
+            
             const response = await fetch(url.toString(), {
-              headers: { 'User-Agent': 'ShadowNet/9.0 IntelHub' }
+              headers: { 'User-Agent': 'Mozilla/5.0 ShadowNet/9.0 IntelHub' },
+              signal: controller.signal
             });
+            clearTimeout(timeoutId);
 
             if (response.ok) {
               const data = (await response.json()) as any;
-              const articles = (data.articles || []).slice(0, 10).map((a: any) => ({
-                title: String(a.title || '').slice(0, 300),
-                url: a.url || '',
-                source: String(a.domain || '').slice(0, 100),
-                date: a.seendate || '',
-                tone: typeof a.tone === 'number' ? a.tone : 0,
-                language: a.language || 'English',
-                image: a.socialimage || '',
-              }));
-              topicResults.push({ id: topic.id, articles, fetchedAt: new Date().toISOString() });
+              const allArticles = data.articles || [];
+              
+              // Frontend'in beklediği topicResults formatına dönüştür ve filtreden geçir
+              const topicResults = INTEL_TOPICS.map(topic => {
+                const matched = allArticles.filter((a: any) => {
+                  const title = String(a.title || '').toLowerCase();
+                  const url = String(a.url || '').toLowerCase();
+                  return topic.k.some(keyword => title.includes(keyword) || url.includes(keyword));
+                }).slice(0, 15).map((a: any) => ({
+                  title: String(a.title || '').slice(0, 300),
+                  url: a.url || '',
+                  source: String(a.domain || '').slice(0, 100),
+                  date: a.seendate || '',
+                  tone: typeof a.tone === 'number' ? a.tone : 0,
+                  language: a.language || 'English',
+                  image: a.socialimage || '',
+                }));
+                return { id: topic.id, articles: matched, fetchedAt: new Date().toISOString() };
+              });
+
+              caches.intel.data = { topics: topicResults, fetchedAt: new Date().toISOString() };
+              console.log(`[Proxy] GDELT: ${topicResults.reduce((s: number, t: any) => s + t.articles.length, 0)} articles total parsed globally.`);
             } else {
-              topicResults.push({ id: topic.id, articles: [], fetchedAt: new Date().toISOString() });
+              console.warn(`[Proxy] GDELT returned HTTP ${response.status}`);
+              caches.intel.lastFetch = 0; // başarısız, bir dahakine tekrar denenecek
             }
-          } catch (e) {
-            console.error(`[Proxy] GDELT ${topic.id} Error:`, e);
-            topicResults.push({ id: topic.id, articles: [], fetchedAt: new Date().toISOString() });
+          } catch (e: any) {
+            console.error(`[Proxy] GDELT Combined Error or Timeout:`, e.message);
+            caches.intel.lastFetch = 0; // Hata oldu, zaman kilidini kaldır!
           }
-          // GDELT rate limit koruması: Her topic arasında 500ms bekle
-          await new Promise(r => setTimeout(r, 500));
+        };
+
+        if (caches.intel.data.topics.length === 0) {
+          // Block on the very first request so UI doesn't stay empty for 15 mins
+          console.log('[Proxy] Initial blocking GDELT fetch...');
+          await fetchAllTopics();
+        } else {
+          // Fire and forget for subsequent cache refreshes
+          console.log('[Proxy] Background GDELT fetch started...');
+          fetchAllTopics().catch(console.error);
         }
-
-        caches.intel.data = { topics: topicResults, fetchedAt: new Date().toISOString() };
-        caches.intel.lastFetch = now;
-        console.log(`[Proxy] GDELT: ${topicResults.reduce((s: number, t: any) => s + t.articles.length, 0)} articles across ${topicResults.length} topics`);
       }
-
+      
       res.setHeader('Content-Type', 'application/json');
-      res.end(JSON.stringify(caches.intel.data));
+      res.end(JSON.stringify(caches.intel.data || { topics: [] }));
     });
 
     // 7. AlienVault OTX (CORS bypass)
     server.middlewares.use('/api/data/otx', async (_req: any, res: any) => {
       try {
         const response = await fetch('https://otx.alienvault.com/api/v1/pulses/subscribed?limit=5', {
-          headers: { 'X-OTX-API-KEY': process.env.VITE_OTX_API_KEY || '' }
+          headers: { 'X-OTX-API-KEY': process.env.OTX_API_KEY || '' }
         });
         if (response.ok) {
           const data = await response.json();
@@ -332,6 +361,81 @@ const shadowProxyPlugin = () => ({
       } catch (e) { console.error('[Proxy] OTX Error:', e); }
       res.setHeader('Content-Type', 'application/json');
       res.end(JSON.stringify({ results: [] }));
+    });
+
+    // 8. AIS WebSocket Relay (V10.0)
+    // Client wss://localhost:5173/api/ws/ais -> wss://stream.aisstream.io/v0/stream
+    server.ws.on('connection', (socket: any, upgradeReq: any) => {
+      if (upgradeReq.url === '/api/ws/ais') {
+        console.log('[AIS] Client connected to ShadowNet AIS Relay');
+        
+        let upstream: any = null;
+        const AIS_KEY = process.env.AIS_STREAM_API_KEY || '';
+
+        socket.on('message', (msg: string) => {
+          try {
+            const data = JSON.parse(msg);
+            if (data.type === 'subscribe') {
+              console.log('[AIS] Subscribing with BoundingBox:', JSON.stringify(data.boundingBoxes));
+              
+              if (upstream) {
+                 console.log('[AIS] Closing existing upstream before re-subscription');
+                 upstream.close();
+              }
+
+              import('ws').then(({ WebSocket }) => {
+                console.log('[AIS] Attempting connection to aisstream.io...');
+                upstream = new WebSocket('wss://stream.aisstream.io/v0/stream');
+                
+                upstream.on('open', () => {
+                  console.log('[AIS] Upstream CONNECTED. Sending API key auth...');
+                  const subMsg = {
+                    APIKey: AIS_KEY,
+                    BoundingBoxes: data.boundingBoxes || [
+                      [[90, -180], [-90, 180]]
+                    ],
+                    FilterMessageTypes: ["PositionReport"]
+                  };
+                  upstream.send(JSON.stringify(subMsg));
+                });
+
+                let logCounter = 0;
+                upstream.on('message', (aisMsg: any) => {
+                  logCounter++;
+                  if (logCounter % 50 === 0) console.log(`[AIS] Received ${logCounter} packets`);
+                  
+                  if (socket.readyState === 1) { // OPEN
+                    socket.send(aisMsg.toString());
+                  }
+                });
+
+                upstream.on('close', (code: number, reason: string) => {
+                  console.warn(`[AIS] Upstream CLOSED. Code: ${code}, Reason: ${reason}`);
+                  if (socket.readyState === 1) {
+                    socket.send(JSON.stringify({ type: 'relay-status', status: 'closed', reason }));
+                  }
+                });
+
+                upstream.on('error', (err: any) => {
+                  console.error('[AIS] Upstream ERROR:', err);
+                  if (socket.readyState === 1) {
+                    socket.send(JSON.stringify({ type: 'relay-status', status: 'error', error: err.message }));
+                  }
+                });
+              }).catch(err => {
+                console.error('[AIS] Failed to load WS module:', err);
+              });
+            }
+          } catch (e) {
+            console.error('[AIS] Relay Message Error:', e);
+          }
+        });
+
+        socket.on('close', () => {
+          console.log('[AIS] Client disconnected');
+          if (upstream) upstream.close();
+        });
+      }
     });
   }
 });

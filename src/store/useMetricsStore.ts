@@ -99,6 +99,8 @@ export interface IntelArticle {
   tone: number;
   sentimentScore?: number;  // AI tarafından atanan puan (0-1)
   sentimentLabel?: 'positive' | 'negative';  // AI etiketi
+  lat?: number;
+  lng?: number;
 }
 
 export interface ThreatAlert {
@@ -109,6 +111,20 @@ export interface ThreatAlert {
   lat?: number;
   lng?: number;
   time: number;
+}
+
+export interface Vessel {
+  id: string;
+  mmsi: number;
+  name: string;
+  lat: number;
+  lng: number;
+  speed: number;
+  course: number;
+  type: string;
+  flag: string;
+  destination?: string;
+  lastUpdate: number;
 }
 
 interface MetricsState {
@@ -157,6 +173,14 @@ interface MetricsState {
   setIntelEvents: (events: IntelArticle[]) => void;
   addThreatAlert: (alert: ThreatAlert) => void;
   setAiStatus: (status: MetricsState['aiStatus']) => void;
+  setIntelSentiment: (results: { articleId: string; label: string; score: number }[]) => void;
+
+  // V10.0 Maritime
+  vessels: Vessel[];
+  selectedVessel: Vessel | null;
+  setVessels: (vessels: Vessel[]) => void;
+  setSelectedVessel: (vessel: Vessel | null) => void;
+  resetStore: () => void;
 }
 
 export const useMetricsStore = create<MetricsState>((set) => ({
@@ -178,7 +202,7 @@ export const useMetricsStore = create<MetricsState>((set) => ({
     providers: [
       { name: 'OPENSKY', status: 'WAIT' },
       { name: 'AIRPLANES', status: 'WAIT' },
-      { name: 'ADSBLOL', status: 'WAIT' }
+      { name: 'ADSB.ONE', status: 'WAIT' }
     ],
     remainingCredits: 4000,
     currentBounds: null
@@ -225,4 +249,38 @@ export const useMetricsStore = create<MetricsState>((set) => ({
       threatAlerts: [alert, ...state.threatAlerts].slice(0, 50),
     })),
   setAiStatus: (status) => set({ aiStatus: status }),
+  setIntelSentiment: (results) => set((state) => ({
+    intelEvents: state.intelEvents.map(event => {
+      const result = results.find(r => r.articleId === event.id);
+      if (result) {
+        return { 
+          ...event, 
+          sentimentLabel: result.label as any, 
+          sentimentScore: result.score 
+        };
+      }
+      return event;
+    })
+  })),
+
+  // V10.0 Maritime
+  vessels: [],
+  selectedVessel: null,
+  setVessels: (vessels) => set({ vessels }),
+  setSelectedVessel: (vessel) => set({ selectedVessel: vessel }),
+
+  resetStore: () => set({
+    earthquakes: [],
+    flights: [],
+    satellites: [],
+    intelEvents: [],
+    threatAlerts: [],
+    vessels: [],
+    cryptoWhales: [],
+    aiStatus: 'loading',
+    selectedFlight: null,
+    selectedSatellite: null,
+    selectedISS: false,
+    selectedVessel: null
+  }),
 }));

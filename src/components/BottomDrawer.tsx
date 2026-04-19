@@ -1,12 +1,24 @@
 import { useState } from 'react';
 import { useMetricsStore } from '../store/useMetricsStore';
-import { ChevronUp, ChevronDown, Newspaper, Zap, Bitcoin, ExternalLink, Activity, Brain } from 'lucide-react';
+import { ChevronUp, ChevronDown, Newspaper, Zap, Bitcoin, ExternalLink, Activity, Brain, RefreshCw } from 'lucide-react';
+import { rebootSystem } from '../services/api';
 
 export default function BottomDrawer() {
   const [isOpen, setIsOpen] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [isRebooting, setIsRebooting] = useState(false);
 
-  const { securityAlerts, earthquakes, newsEvents, cryptoWhales, torNodes, intelEvents, threatAlerts, aiStatus } = useMetricsStore();
+  const { 
+    securityAlerts, earthquakes, newsEvents, cryptoWhales, 
+    torNodes, intelEvents, threatAlerts, aiStatus, vessels 
+  } = useMetricsStore();
+
+  const handleReboot = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setIsRebooting(true);
+    await rebootSystem();
+    setTimeout(() => setIsRebooting(false), 2000);
+  };
 
   const toggle = (id: string) => setExpandedId(expandedId === id ? null : id);
 
@@ -17,12 +29,34 @@ export default function BottomDrawer() {
     >
       <div 
         onClick={() => setIsOpen(!isOpen)}
-        style={{ width: '100%', height: '40px', cursor: 'pointer', display: 'flex', justifyContent: 'center', alignItems: 'center', background: 'rgba(0,0,0,0.6)', borderTop: '1px solid var(--panel-border)' }}
+        style={{ 
+          width: '100%', height: '40px', cursor: 'pointer', display: 'flex', 
+          justifyContent: 'center', alignItems: 'center', background: 'rgba(0,0,0,0.85)', 
+          borderTop: '1px solid var(--panel-border)', position: 'relative'
+        }}
       >
         {isOpen ? <ChevronDown color="var(--text-primary)" size={24} /> : <ChevronUp color="var(--text-primary)" size={24} />}
         <span className="mono" style={{ marginLeft: '10px', fontSize: '0.8rem', letterSpacing: '0.2em' }}>
           {isOpen ? 'MASTER.TERMINAL [AKTİF]' : 'MASTER.TERMINAL [BEKLEMEDE]'}
         </span>
+
+        {/* Tactical Reboot Button (Always on Top Bar) */}
+        <button 
+          onClick={handleReboot}
+          disabled={isRebooting}
+          style={{
+            position: 'absolute', right: '15px', padding: '4px 12px', borderRadius: '4px',
+            background: isRebooting ? 'rgba(239, 68, 68, 0.4)' : 'rgba(239, 68, 68, 0.1)',
+            border: `1px solid ${isRebooting ? '#ef4444' : 'rgba(239, 68, 68, 0.3)'}`,
+            color: '#fca5a5', cursor: isRebooting ? 'wait' : 'pointer', fontSize: '0.65rem', fontWeight: 'bold',
+            display: 'flex', alignItems: 'center', gap: '6px', transition: 'all 0.3s',
+            boxShadow: isRebooting ? '0 0 15px rgba(239, 68, 68, 0.4)' : 'none'
+          }}
+          className={isRebooting ? 'animate-pulse' : ''}
+        >
+          <RefreshCw size={12} className={isRebooting ? 'animate-spin' : ''} />
+          {isRebooting ? 'REBOOTING...' : 'REBOOT SYSTEM'}
+        </button>
       </div>
 
       <div style={{ flex: 1, display: isOpen ? 'flex' : 'none', padding: '0.8rem', gap: '0.8rem', overflow: 'hidden' }}>
@@ -43,12 +77,14 @@ export default function BottomDrawer() {
           </div>
           <div className="no-scrollbar" style={{ flex: 1, overflowY: 'auto', padding: '0.5rem' }}>
             {intelEvents.length === 0 && <p style={{ color: 'var(--text-secondary)', fontSize: '0.7rem' }}>GDELT istihbaratı yükleniyor...</p>}
-            {intelEvents.slice(0, 20).map((article, i) => {
+            {intelEvents.map((article, i) => {
               const id = `intel-${article.id}-${i}`;
               const isThreat = threatAlerts.some(t => t.id === `threat-${article.id}`);
               const topicColors: Record<string, string> = {
                 military: '#ef4444', cyber: '#a855f7', nuclear: '#f59e0b',
-                sanctions: '#3b82f6', intelligence: '#06b6d4', maritime: '#22d3ee'
+                sanctions: '#3b82f6', intelligence: '#06b6d4', maritime: '#22d3ee',
+                terrorism: '#dc2626', geopolitics: '#fbbf24', conflict: '#f97316',
+                diplomacy: '#60a5fa'
               };
               const color = topicColors[article.topicId] || '#94a3b8';
               return (
@@ -61,22 +97,11 @@ export default function BottomDrawer() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                     <span style={{ fontSize: '0.6rem', color, fontWeight: 'bold', flexShrink: 0 }}>[{article.topicId.toUpperCase()}]</span>
                     <span style={{ fontSize: '0.72rem', color: 'var(--text-primary)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{article.title}</span>
-                    {article.sentimentScore !== undefined && (
-                      <span style={{
-                        fontSize: '0.55rem', padding: '1px 6px', borderRadius: '8px', flexShrink: 0,
-                        background: article.sentimentLabel === 'negative' ? 'rgba(239,68,68,0.2)' : 'rgba(34,197,94,0.2)',
-                        color: article.sentimentLabel === 'negative' ? '#fca5a5' : '#86efac',
-                        fontWeight: 'bold'
-                      }}>
-                        {article.sentimentLabel === 'negative' ? '⚠' : '✓'} {Math.round(article.sentimentScore * 100)}%
-                      </span>
-                    )}
                   </div>
                   {expandedId === id && (
                     <div style={{ marginTop: '6px', padding: '6px', background: 'rgba(0,0,0,0.3)', borderRadius: '4px' }}>
                       <p style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', marginBottom: '4px' }}>
                         <strong>Kaynak:</strong> {article.source} · <strong>Tarih:</strong> {article.date}
-                        {article.sentimentScore !== undefined && (<> · <strong>AI Skoru:</strong> <span style={{ color: article.sentimentLabel === 'negative' ? '#ef4444' : '#22c55e' }}>{Math.round(article.sentimentScore * 100)}% {article.sentimentLabel}</span></>)}
                       </p>
                       <a href={article.url} target="_blank" rel="noreferrer" style={{ fontSize: '0.65rem', color: '#22c55e', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
                         Kaynağa Git <ExternalLink size={9} />
@@ -237,6 +262,36 @@ export default function BottomDrawer() {
                       <a href={`https://earthquake.usgs.gov/earthquakes/eventpage/${q.id}`} target="_blank" rel="noreferrer" style={{ fontSize: '0.65rem', color: '#f59e0b', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
                         USGS Raporu <ExternalLink size={9} />
                       </a>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* 5. MARİTİME (AIS Stream) */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', border: '1px solid rgba(45, 212, 191, 0.3)', borderRadius: '4px', background: 'rgba(0,0,0,0.5)' }}>
+          <div style={{ padding: '0.6rem', borderBottom: '1px solid rgba(45, 212, 191, 0.3)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <Activity color="#2dd4bf" size={16} />
+            <h3 style={{ color: '#2dd4bf', fontSize: '0.85rem' }}>MARITIME ENERGETICS</h3>
+          </div>
+          <div className="no-scrollbar" style={{ flex: 1, overflowY: 'auto', padding: '0.5rem' }}>
+            {vessels.length === 0 && <p style={{ color: 'var(--text-secondary)', fontSize: '0.7rem' }}>AIS verisi bekleniyor...</p>}
+            {vessels.slice(0, 30).map((v, i) => {
+              const id = `vessel-draw-${v.id}-${i}`;
+              return (
+                <div key={id} onClick={() => toggle(id)} style={{ cursor: 'pointer', padding: '5px 6px', marginBottom: '2px', borderRadius: '4px', background: expandedId === id ? 'rgba(45,212,191,0.1)' : 'transparent', borderLeft: expandedId === id ? '2px solid #2dd4bf' : '2px solid transparent', transition: 'all 0.2s' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                     <span style={{ fontSize: '0.72rem', color: 'var(--text-primary)', fontWeight: 'bold' }}>{v.name.slice(0, 18)}</span>
+                     <span style={{ fontSize: '0.6rem', color: '#2dd4bf' }}>{v.speed} kn</span>
+                  </div>
+                  {expandedId === id && (
+                    <div style={{ marginTop: '4px', padding: '4px', background: 'rgba(0,0,0,0.3)', borderRadius: '4px' }}>
+                      <p style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', marginBottom: '3px' }}>
+                        <strong>MMSI:</strong> {v.mmsi} · <strong>Rota:</strong> {v.course}° · <strong>Konum:</strong> {v.lat.toFixed(2)}, {v.lng.toFixed(2)}
+                      </p>
+                      <span style={{ fontSize: '0.65rem', color: '#2dd4bf' }}>AIS POSITION_REPORT_SOURCE</span>
                     </div>
                   )}
                 </div>

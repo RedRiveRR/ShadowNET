@@ -38,6 +38,14 @@ export default function Legend() {
           <div style={{ width: '8px', height: '8px', background: '#22c55e', borderRadius: '50%', boxShadow: '0 0 8px #22c55e' }}></div>
           <span style={{ color: '#cbd5e1' }}>SEISMIC EVENT (QUAKE)</span>
         </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#2dd4bf', boxShadow: '0 0 8px #2dd4bf' }}></div>
+          <span style={{ color: '#cbd5e1' }}>MARITIME ENTITY (AIS)</span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div style={{ width: '12px', height: '1px', background: '#3b82f6', boxShadow: '0 0 8px #3b82f6' }}></div>
+          <span style={{ color: '#cbd5e1' }}>NEURAL LINK (CORRELATION)</span>
+        </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '8px', marginTop: '4px' }}>
           <div style={{ width: '15px', height: '2px', background: '#fbbf24', boxShadow: '0 0 8px #fbbf24' }}></div>
           <span style={{ color: '#fbbf24', fontSize: '0.65rem', fontWeight: 'bold' }}>WHALE TX DETECTED</span>
