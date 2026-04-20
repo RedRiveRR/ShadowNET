@@ -83,37 +83,42 @@ app.get('/api/data/flights', async (req, res) => {
   if (!caches.flights.global || now - caches.flights.global.lastFetch > GLOBAL_TTL) {
     let success = false;
     const token = await getOpenSkyToken();
+    const flightErrors = [];
     const providers = [
       { name: 'OPENSKY', url: 'https://opensky-network.org/api/states/all', auth: true },
       { name: 'AIRPLANES', url: 'https://api.airplanes.live/v2/all', auth: false },
       { name: 'ADSB.ONE', url: 'https://api.adsb.one/v2/all', auth: false }
     ];
-
     for (const p of providers) {
       if (apiCooldowns[p.name] && now - apiCooldowns[p.name] < 300 * 1000) continue;
       try {
-        const headers = { 'User-Agent': 'Mozilla/5.0 ShadowNet/9.0 MasterHub' };
+        const headers = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) ShadowNet/9.0' };
         if (p.auth && token) headers['Authorization'] = `Bearer ${token}`;
 
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 5000);
+        const timeoutId = setTimeout(() => controller.abort(), 6000);
 
         const response = await fetch(p.url, { headers, signal: controller.signal });
         clearTimeout(timeoutId);
 
         if (response.ok) {
           const rawData = await response.json();
-          const credits = response.headers.get('X-Rate-Limit-Remaining');
           caches.flights.global = {
-            data: { ...rawData, _source: p.name, _credits: credits ? parseInt(credits) : null },
+            data: { ...rawData, _source: p.name, _ts: now },
             lastFetch: now
           };
           success = true; delete apiCooldowns[p.name]; break;
-        } else { apiCooldowns[p.name] = now; }
-      } catch (e) { apiCooldowns[p.name] = now; }
+        } else { 
+          flightErrors.push(`${p.name}: ${response.status} ${response.statusText}`);
+          apiCooldowns[p.name] = now; 
+        }
+      } catch (e) { 
+        flightErrors.push(`${p.name} Error: ${e.message}`);
+        apiCooldowns[p.name] = now; 
+      }
     }
     if (!success && !caches.flights.global) {
-      caches.flights.global = { data: { ac: [], _simulated: true, _source: 'SIMULATED' }, lastFetch: now };
+      caches.flights.global = { data: { ac: [], states: [], _simulated: true, _errors: flightErrors }, lastFetch: now };
     }
   }
 
@@ -139,7 +144,8 @@ app.get('/api/data/satellites', async (req, res) => {
   const now = Date.now();
   if (now - caches.satellites.lastFetch > 3600000) {
     try {
-      const response = await fetch('https://celestrak.org/NORAD/elements/gp.php?GROUP=stations&FORMAT=tle');
+      // GROUP=active ile tüm aktif uyduları çekiyoruz (ISS dahil)
+      const response = await fetch('https://celestrak.org/NORAD/elements/gp.php?GROUP=active&FORMAT=tle');
       if (response.ok) {
         const text = await response.text();
         const lines = text.trim().split('\n').map(l => l.trim());
@@ -149,7 +155,9 @@ app.get('/api/data/satellites', async (req, res) => {
         }
         caches.satellites.data = sats; caches.satellites.lastFetch = now;
       }
-    } catch (e) {}
+    } catch (e) {
+      console.error('[Satellite Fetch Error]', e.message);
+    }
   }
   res.json(caches.satellites.data);
 });
