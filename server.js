@@ -72,60 +72,85 @@ async function getOpenSkyToken() {
   return null;
 }
 
-app.get('/api/data/flights', async (req, res) => {
-  const now = Date.now();
-  const lamin = req.query.lamin;
-  const lomin = req.query.lomin;
-  const lamax = req.query.lamax;
-  const lomax = req.query.lomax;
-  const GLOBAL_TTL = 90000;
-  
-  if (!caches.flights.global || now - caches.flights.global.lastFetch > GLOBAL_TTL) {
-    let success = false;
-    const token = await getOpenSkyToken();
-    const flightErrors = [];
-    const providers = [
-      { name: 'OPENSKY', url: 'https://opensky-network.org/api/states/all', auth: true },
-      { name: 'ADSB.LOL', url: 'https://api.adsb.lol/v2/all', auth: false },
-      { name: 'ADSB.FI', url: 'https://api.adsb.fi/v2/all', auth: false }
-    ];
-    for (const p of providers) {
-      if (apiCooldowns[p.name] && now - apiCooldowns[p.name] < 120 * 1000) continue;
-      try {
-        const headers = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebkit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' };
-        if (p.auth && token) headers['Authorization'] = `Bearer ${token}`;
+// --- Background Sync Engines ---
+const GLOBAL_CONFIG = {
+  flightInterval: 90000,   // 90s
+  satelliteInterval: 1800000, // 30m
+  timeout: 30000           // 30s for background fetches
+};
 
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 12000); // 12s timeout for Render
+async function syncFlights() {
+  const token = await getOpenSkyToken();
+  const providers = [
+    { name: 'OPENSKY', url: 'https://opensky-network.org/api/states/all', auth: true },
+    { name: 'ADSB.LOL', url: 'https://api.adsb.lol/v2/all', auth: false },
+    { name: 'ADSB.FI', url: 'https://api.adsb.fi/v2/all', auth: false }
+  ];
 
-        const response = await fetch(p.url, { headers, signal: controller.signal });
-        clearTimeout(timeoutId);
+  for (const p of providers) {
+    try {
+      const headers = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebkit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' };
+      if (p.auth && token) headers['Authorization'] = `Bearer ${token}`;
+      
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), GLOBAL_CONFIG.timeout);
+      const response = await fetch(p.url, { headers, signal: controller.signal });
+      clearTimeout(timeoutId);
 
-        if (response.ok) {
-          const rawData = await response.json();
-          caches.flights.global = {
-            data: { ...rawData, _source: p.name, _ts: now },
-            lastFetch: now
-          };
-          success = true; delete apiCooldowns[p.name]; break;
-        } else { 
-          flightErrors.push(`${p.name}: ${response.status}`);
-          apiCooldowns[p.name] = now; 
-        }
-      } catch (e) { 
-        flightErrors.push(`${p.name} Error: ${e.message}`);
-        apiCooldowns[p.name] = now; 
+      if (response.ok) {
+        const rawData = await response.json();
+        caches.flights.global = { data: { ...rawData, _source: p.name }, lastFetch: Date.now() };
+        console.log(`[Sync] Flights updated via ${p.name}`);
+        return true;
       }
-    }
-    if (!success && !caches.flights.global) {
-      caches.flights.global = { data: { ac: [], states: [], _simulated: true, _errors: flightErrors }, lastFetch: now };
+    } catch (e) {
+      console.log(`[Sync] ${p.name} failed: ${e.message}`);
     }
   }
+  return false;
+}
 
-  let responseData = { ...caches.flights.global.data };
+async function syncSatellites() {
+  const groups = ['starlink', 'gps-ops', 'stations', 'visual'];
+  let allSats = [];
+  for (const group of groups) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000);
+      const response = await fetch(`https://celestrak.org/NORAD/elements/gp.php?GROUP=${group}&FORMAT=tle`, { signal: controller.signal });
+      clearTimeout(timeoutId);
+      if (response.ok) {
+        const text = await response.text();
+        const lines = text.trim().split('\n').map(l => l.trim());
+        for (let i = 0; i < lines.length - 2; i += 3) {
+          allSats.push({ name: lines[i], tle1: lines[i + 1], tle2: lines[i + 2], group });
+        }
+      }
+    } catch (e) {}
+  }
+  if (allSats.length > 0) {
+    caches.satellites.data = allSats;
+    caches.satellites.lastFetch = Date.now();
+    console.log(`[Sync] Satellites updated: ${allSats.length} objects`);
+  }
+}
+
+// Start background loops
+setInterval(syncFlights, GLOBAL_CONFIG.flightInterval);
+setInterval(syncSatellites, GLOBAL_CONFIG.satelliteInterval);
+// Initial trigger after 2s to allow server to warm up
+setTimeout(() => { syncFlights(); syncSatellites(); }, 2000);
+
+app.get('/api/data/flights', async (req, res) => {
+  const { lamin, lomin, lamax, lomax } = req.query;
+  
+  // Always return cached data instantly
+  let responseData = caches.flights.global ? { ...caches.flights.global.data } : { ac: [], states: [], _loading: true };
+
   if (lamin && lomin && lamax && lomax) {
     const blamin = parseFloat(lamin); const blomin = parseFloat(lomin);
     const blamax = parseFloat(lamax); const blomax = parseFloat(lomax);
+    
     if (responseData.states) {
       responseData.states = responseData.states.filter(s => s[6] >= blamin && s[6] <= blamax && s[5] >= blomin && s[5] <= blomax);
     }
@@ -140,35 +165,7 @@ app.get('/api/data/flights', async (req, res) => {
   res.json(responseData);
 });
 
-app.get('/api/data/satellites', async (req, res) => {
-  const now = Date.now();
-  if (now - caches.satellites.lastFetch > 3600000) {
-    try {
-      // Çoklu uydu grupları (Starlink, GPS, Stations ve Visual) çekiyoruz
-      const groups = ['starlink', 'gps-ops', 'stations', 'visual'];
-      let allSats = [];
-      for (const group of groups) {
-        try {
-          const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 10000);
-          const response = await fetch(`https://celestrak.org/NORAD/elements/gp.php?GROUP=${group}&FORMAT=tle`, { signal: controller.signal });
-          clearTimeout(timeoutId);
-          if (response.ok) {
-            const text = await response.text();
-            const lines = text.trim().split('\n').map(l => l.trim());
-            for (let i = 0; i < lines.length - 2; i += 3) {
-              allSats.push({ name: lines[i], tle1: lines[i + 1], tle2: lines[i + 2], group });
-            }
-          }
-        } catch (ee) {}
-      }
-      if (allSats.length > 0) {
-        caches.satellites.data = allSats; caches.satellites.lastFetch = now;
-      }
-    } catch (e) {
-      console.error('[Satellite Fetch Error]', e.message);
-    }
-  }
+app.get('/api/data/satellites', (req, res) => {
   res.json(caches.satellites.data);
 });
 
