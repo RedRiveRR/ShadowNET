@@ -44,8 +44,7 @@ class AISService {
   private connect() {
     if (this.socket) this.socket.close();
 
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/api/ws/ais`;
+    const wsUrl = `wss://shadownet-vwvw.onrender.com/api/ws/ais`;
 
     console.log(`[AIS] Connecting to ShadowNet AIS Relay: ${wsUrl}`);
     this.socket = new WebSocket(wsUrl);

@@ -5,6 +5,9 @@ import { initMLWorker, analyzeIntelSentiment } from './ml-manager';
 import { aisService } from './ais-service';
 import * as satellite from 'satellite.js';
 
+// === HYBRID CONFIG ===
+const RENDER_URL = 'https://shadownet-vwvw.onrender.com';
+
 // === DEPREMLER ===
 export const fetchEarthquakes = async () => {
   try {
@@ -23,7 +26,7 @@ export const fetchEarthquakes = async () => {
 // === UÇUŞLAR (Universal Quad-Source Adapter) ===
 export const fetchFlights = async (bounds?: { lamin: number; lomin: number; lamax: number; lomax: number }) => {
   try {
-    let url = '/api/data/flights';
+    let url = `${RENDER_URL}/api/data/flights`;
     if (bounds) {
       const params = new URLSearchParams({
         lamin: bounds.lamin.toString(),
@@ -105,7 +108,7 @@ export const fetchFlights = async (bounds?: { lamin: number; lomin: number; lama
 // === UYDULAR ===
 export const fetchSatellites = async () => {
   try {
-    const response = await fetch('/api/data/satellites');
+    const response = await fetch(`${RENDER_URL}/api/data/satellites`);
     if (!response.ok) return;
     const data = await response.json();
     if (Array.isArray(data) && data.length > 0) {
@@ -131,7 +134,7 @@ const COUNTRY_MAP: Record<string, {lat: number, lng: number}> = {
 
 export const fetchNews = async () => {
   try {
-    const response = await fetch('/api/data/news');
+    const response = await fetch(`${RENDER_URL}/api/data/news`);
     if (!response.ok) return;
     const data = await response.json();
     if (Array.isArray(data) && data.length > 0) {
@@ -157,7 +160,7 @@ export const fetchNews = async () => {
 // === TOR DÜĞÜMLERİ ===
 export const fetchTorNodes = async () => {
   try {
-    const response = await fetch('/api/data/tor');
+    const response = await fetch(`${RENDER_URL}/api/data/tor`);
     if (!response.ok) return;
     const data = await response.json();
     if (Array.isArray(data) && data.length > 0) {
@@ -247,7 +250,7 @@ export const fetchNVD = async () => {
 // === ALIENVAULT OTX (Proxy üzerinden) ===
 export const fetchOTX = async () => {
   try {
-    const response = await fetch('/api/data/otx');
+    const response = await fetch(`${RENDER_URL}/api/data/otx`);
     if (response.ok) {
       const data = await response.json();
       if (data.results && data.results.length > 0) {
@@ -269,7 +272,7 @@ export const fetchOTX = async () => {
 // === CLOUDFLARE RADAR (Proxy üzerinden) ===
 export const fetchRadar = async () => {
   try {
-    const response = await fetch('/api/data/radar');
+    const response = await fetch(`${RENDER_URL}/api/data/radar`);
     if (response.ok) {
       const data = await response.json();
       if (data.result && data.result.top_0 && data.result.top_0.length > 0) {
@@ -313,7 +316,7 @@ export const connectCryptoWebSocket = () => {
 // === GDELT İSTİHBARAT VERİSİ ===
 export const fetchIntelEvents = async () => {
   try {
-    const response = await fetch('/api/data/intel');
+    const response = await fetch(`${RENDER_URL}/api/data/intel`);
     if (response.ok) {
       const data = await response.json();
       const articleMap = new Map<string, IntelArticle>();
