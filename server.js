@@ -15,6 +15,21 @@ const server = http.createServer(app);
 app.use(cors());
 app.use(express.json());
 
+// --- Diagnostic Middleware ---
+app.use((req, res, next) => {
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+  next();
+});
+
+app.get('/api/status', (req, res) => {
+  res.json({ 
+    status: 'online', 
+    uptime: process.uptime(),
+    timestamp: new Date().toISOString(),
+    env: process.env.NODE_ENV || 'development'
+  });
+});
+
 // --- ShadowNet V7 Multi-Service Proxy ---
 const caches = {
   flights: { data: { ac: [] }, lastFetch: 0 },
@@ -311,9 +326,15 @@ Array.prototype.push.apply(setInterval(() => {
   if (AIS.packetCount > 0) { AIS.packetCount = 0; }
 }, 60000));
 
-app.use(express.static(join(__dirname, 'dist')));
+const distPath = join(__dirname, 'dist');
+app.use(express.static(distPath));
+
 app.use((req, res) => {
-  res.sendFile(join(__dirname, 'dist', 'index.html'));
+  // If request is for an API that hasn't been handled, return JSON error instead of HTML
+  if (req.url.startsWith('/api/')) {
+    return res.status(404).json({ error: 'API route not found', url: req.url });
+  }
+  res.sendFile(join(distPath, 'index.html'));
 });
 
 const PORT = process.env.PORT || 8080;
