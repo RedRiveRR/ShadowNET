@@ -86,17 +86,17 @@ app.get('/api/data/flights', async (req, res) => {
     const flightErrors = [];
     const providers = [
       { name: 'OPENSKY', url: 'https://opensky-network.org/api/states/all', auth: true },
-      { name: 'AIRPLANES', url: 'https://api.airplanes.live/v2/all', auth: false },
-      { name: 'ADSB.ONE', url: 'https://api.adsb.one/v2/all', auth: false }
+      { name: 'ADSB.LOL', url: 'https://api.adsb.lol/v2/all', auth: false },
+      { name: 'ADSB.FI', url: 'https://api.adsb.fi/v2/all', auth: false }
     ];
     for (const p of providers) {
-      if (apiCooldowns[p.name] && now - apiCooldowns[p.name] < 300 * 1000) continue;
+      if (apiCooldowns[p.name] && now - apiCooldowns[p.name] < 120 * 1000) continue;
       try {
-        const headers = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) ShadowNet/9.0' };
+        const headers = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebkit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' };
         if (p.auth && token) headers['Authorization'] = `Bearer ${token}`;
 
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 6000);
+        const timeoutId = setTimeout(() => controller.abort(), 12000); // 12s timeout for Render
 
         const response = await fetch(p.url, { headers, signal: controller.signal });
         clearTimeout(timeoutId);
@@ -109,7 +109,7 @@ app.get('/api/data/flights', async (req, res) => {
           };
           success = true; delete apiCooldowns[p.name]; break;
         } else { 
-          flightErrors.push(`${p.name}: ${response.status} ${response.statusText}`);
+          flightErrors.push(`${p.name}: ${response.status}`);
           apiCooldowns[p.name] = now; 
         }
       } catch (e) { 
@@ -144,16 +144,26 @@ app.get('/api/data/satellites', async (req, res) => {
   const now = Date.now();
   if (now - caches.satellites.lastFetch > 3600000) {
     try {
-      // GROUP=active ile tüm aktif uyduları çekiyoruz (ISS dahil)
-      const response = await fetch('https://celestrak.org/NORAD/elements/gp.php?GROUP=active&FORMAT=tle');
-      if (response.ok) {
-        const text = await response.text();
-        const lines = text.trim().split('\n').map(l => l.trim());
-        const sats = [];
-        for (let i = 0; i < lines.length - 2; i += 3) {
-          sats.push({ name: lines[i], tle1: lines[i + 1], tle2: lines[i + 2] });
-        }
-        caches.satellites.data = sats; caches.satellites.lastFetch = now;
+      // Çoklu uydu grupları (Starlink, GPS, Stations ve Visual) çekiyoruz
+      const groups = ['starlink', 'gps-ops', 'stations', 'visual'];
+      let allSats = [];
+      for (const group of groups) {
+        try {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 10000);
+          const response = await fetch(`https://celestrak.org/NORAD/elements/gp.php?GROUP=${group}&FORMAT=tle`, { signal: controller.signal });
+          clearTimeout(timeoutId);
+          if (response.ok) {
+            const text = await response.text();
+            const lines = text.trim().split('\n').map(l => l.trim());
+            for (let i = 0; i < lines.length - 2; i += 3) {
+              allSats.push({ name: lines[i], tle1: lines[i + 1], tle2: lines[i + 2], group });
+            }
+          }
+        } catch (ee) {}
+      }
+      if (allSats.length > 0) {
+        caches.satellites.data = allSats; caches.satellites.lastFetch = now;
       }
     } catch (e) {
       console.error('[Satellite Fetch Error]', e.message);
@@ -311,6 +321,13 @@ const connectUpstream = async () => {
     });
     upstream.on('close', () => { AIS.upstream = null; AIS.connecting = false; setTimeout(connectUpstream, 15000); });
     upstream.on('error', () => { AIS.connecting = false; AIS.upstream = null; });
+    
+    // Heartbeat to keep Render connection alive
+    const hb = setInterval(() => {
+      if (upstream.readyState === 1) upstream.send(JSON.stringify({ type: 'ping' }));
+    }, 30000);
+    upstream.on('close', () => clearInterval(hb));
+
   } catch (e) { AIS.connecting = false; setTimeout(connectUpstream, 15000); }
 };
 
