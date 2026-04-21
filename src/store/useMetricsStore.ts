@@ -54,6 +54,10 @@ export interface Satellite {
   lat?: number;
   lng?: number;
   alt?: number;
+  noradId?: string;
+  isPremium?: boolean;
+  satrec?: any; // satellite.js satrec object for fast propagation
+  velocityVec?: { x: number; y: number; z: number };
   path?: { lat: number; lng: number }[];
 }
 
@@ -228,7 +232,7 @@ export const useMetricsStore = create<MetricsState>((set) => ({
   setDisasters: (disasters) => set({ disasters }),
   addSecurityAlert: (alert) =>
     set((state) => ({
-      securityAlerts: [alert, ...state.securityAlerts].slice(0, 30),
+      securityAlerts: [alert, ...state.securityAlerts].slice(0, 50),
     })),
 
   setSatellites: (satellites) => set({ satellites }),
@@ -246,7 +250,7 @@ export const useMetricsStore = create<MetricsState>((set) => ({
   setIntelEvents: (events) => set({ intelEvents: events }),
   addThreatAlert: (alert) =>
     set((state) => ({
-      threatAlerts: [alert, ...state.threatAlerts].slice(0, 50),
+      threatAlerts: [alert, ...state.threatAlerts].slice(0, 100),
     })),
   setAiStatus: (status) => set({ aiStatus: status }),
   setIntelSentiment: (results) => set((state) => ({
@@ -255,12 +259,12 @@ export const useMetricsStore = create<MetricsState>((set) => ({
       if (result) {
         return { 
           ...event, 
-          sentimentLabel: result.label as any, 
+          sentimentLabel: (result.label as 'positive' | 'negative') || 'negative', 
           sentimentScore: result.score 
         };
       }
       return event;
-    })
+    }).slice(0, 300) // Ensure intel list doesn't bloat
   })),
 
   // V10.0 Maritime

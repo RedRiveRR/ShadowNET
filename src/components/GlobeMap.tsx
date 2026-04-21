@@ -6,9 +6,11 @@ import { Navigation, Rocket, Zap, Crosshair, Play, Pause, X, ExternalLink } from
 
 // === PAYLAŞILAN 3D KAYNAKLAR ===
 
-const satGeom = new THREE.BoxGeometry(0.3, 0.3, 0.3);
-const satPanelGeom = new THREE.PlaneGeometry(1, 0.25);
-const satMat = new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.8 });
+const satGeom = new THREE.BoxGeometry(0.35, 0.35, 0.35);
+const premiumSatGeom = new THREE.OctahedronGeometry(1.2, 0); 
+const satMat = new THREE.MeshLambertMaterial({ color: '#ffffff', emissive: '#64748b' });
+const premiumSatMat = new THREE.MeshLambertMaterial({ color: '#facc15', emissive: '#facc15', emissiveIntensity: 0.5 });
+const satPanelGeom = new THREE.PlaneGeometry(0.8, 0.2);
 const satPanelMat = new THREE.MeshBasicMaterial({ color: '#1d4ed8', side: THREE.DoubleSide });
 
 const issTrussGeom = new THREE.CylinderGeometry(0.1, 0.1, 4, 8);
@@ -18,19 +20,37 @@ const issMat = new THREE.MeshBasicMaterial({ color: '#fbbf24' });
 export default function GlobeMap() {
   const globeRef = useRef<any>(null);
   const [dimensions, setDimensions] = useState({ width: window.innerWidth, height: window.innerHeight });
-  const { 
-    iss, satellites, earthquakes, newsEvents, intelEvents,
-    setSelectedFlight,
-    selectedSatellite, setSelectedSatellite,
-    selectedISS, setSelectedISS,
-    threatAlerts, aiStatus
-  } = useMetricsStore();
+  
+  const iss = useMetricsStore(state => state.iss);
+  const satellites = useMetricsStore(state => state.satellites);
+  const earthquakes = useMetricsStore(state => state.earthquakes);
+  const newsEvents = useMetricsStore(state => state.newsEvents);
+  const intelEvents = useMetricsStore(state => state.intelEvents);
+  const threatAlerts = useMetricsStore(state => state.threatAlerts);
+  const aiStatus = useMetricsStore(state => state.aiStatus);
+  const selectedSatellite = useMetricsStore(state => state.selectedSatellite);
+  const setSelectedSatellite = useMetricsStore(state => state.setSelectedSatellite);
+  const selectedISS = useMetricsStore(state => state.selectedISS);
+  const setSelectedISS = useMetricsStore(state => state.setSelectedISS);
+  const setSelectedFlight = useMetricsStore(state => state.setSelectedFlight);
   
   const [isRotating, setIsRotating] = useState(true);
   const [selectedThreat, setSelectedThreat] = useState<any>(null);
   const [selectedEarthquake, setSelectedEarthquake] = useState<any>(null);
   const [selectedNews, setSelectedNews] = useState<any>(null);
   const [selectedIntel, setSelectedIntel] = useState<any>(null);
+  const [geoData, setGeoData] = useState<any>(null);
+  const [selectedCountry, setSelectedCountry] = useState<any>(null);
+
+  // === COUNTRY LABELS CALCULATION ===
+  // Country labels calculation removed as it was unused.
+
+  useEffect(() => {
+    fetch('https://raw.githubusercontent.com/johan/world.geo.json/master/countries.geo.json')
+      .then(res => res.json())
+      .then(data => setGeoData(data))
+      .catch(err => console.error("Globe GeoData Load Error:", err));
+  }, []);
 
 
 
@@ -79,18 +99,40 @@ export default function GlobeMap() {
       group.scale.set(1.8, 1.8, 1.8);
     } else {
       group = new THREE.Group();
-      const body = new THREE.Mesh(satGeom, satMat);
+      const isPremium = d.isPremium;
+      const isPriority = isPremium || d.id === selectedSatellite?.id;
+      
+      const body = new THREE.Mesh(isPremium ? premiumSatGeom : satGeom, isPremium ? premiumSatMat : satMat);
       group.add(body);
-      const p1 = new THREE.Mesh(satPanelGeom, satPanelMat);
-      p1.position.x = 0.65; p1.rotation.y = Math.PI/4;
-      group.add(p1);
-      const p2 = new THREE.Mesh(satPanelGeom, satPanelMat);
-      p2.position.x = -0.65; p2.rotation.y = -Math.PI/4;
-      group.add(p2);
+      
+      if (isPriority) {
+        // Elite satellites get a distinct ring aura
+        const aura = new THREE.Mesh(new THREE.RingGeometry(1, 1.1, 16), new THREE.MeshBasicMaterial({ color: '#facc15', transparent: true, opacity: 0.4, side: THREE.DoubleSide }));
+        aura.rotation.x = Math.PI / 2;
+        group.add(aura);
+      } else {
+        const p1 = new THREE.Mesh(satPanelGeom, satPanelMat);
+        p1.position.x = 0.65; p1.rotation.y = Math.PI/4;
+        group.add(p1);
+        const p2 = new THREE.Mesh(satPanelGeom, satPanelMat);
+        p2.position.x = -0.65; p2.rotation.y = -Math.PI/4;
+        group.add(p2);
+      }
+
+      // Hız Vektörüne Göre Yönelim (Velocity-based orientation)
+      if (d.velocityVec) {
+        const v = d.velocityVec;
+        const velLenSq = v.x*v.x + v.y*v.y + v.z*v.z;
+        if (velLenSq > 0.001) {
+          const vel = new THREE.Vector3(v.x, v.y, v.z).normalize();
+          const quaternion = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), vel);
+          group.applyQuaternion(quaternion);
+        }
+      }
     }
 
     return group;
-  }, []);
+  }, [selectedSatellite]);
 
   const ringsData = useMemo(() => {
     const rings: any[] = [];
@@ -131,11 +173,17 @@ export default function GlobeMap() {
   }, [earthquakes, newsEvents, threatAlerts]);
 
   const pathsData = useMemo(() => {
-    return (satellites || []).filter(s => s.path && s.path.length > 0).map(s => ({
-      coords: s.path?.map(p => [p.lat, p.lng]),
-      color: 'rgba(255, 255, 255, 0.1)'
-    }));
-  }, [satellites]);
+    return (satellites || []).filter(s => s.path && s.path.length > 0).map(s => {
+      const isSelected = selectedSatellite?.id === s.id;
+      return {
+        coords: s.path?.map((p: { lat: number; lng: number }) => [p.lat, p.lng]),
+        color: s.isPremium 
+          ? (isSelected ? 'rgba(250, 204, 21, 0.8)' : 'rgba(250, 204, 21, 0.3)') 
+          : (isSelected ? 'rgba(34, 211, 238, 0.8)' : 'rgba(34, 211, 238, 0.1)'),
+        width: isSelected ? 2 : 1
+      };
+    });
+  }, [satellites, selectedSatellite]);
 
   // V9.1: Tıklama yakalamak için görünmez/yarı-saydam noktalar
   const pointsData = useMemo(() => {
@@ -200,11 +248,76 @@ export default function GlobeMap() {
         ref={globeRef}
         width={dimensions.width}
         height={dimensions.height}
-        globeImageUrl="//unpkg.com/three-globe/example/img/earth-night.jpg"
         backgroundColor="#000000"
+        
+        // --- HIGH-QUALITY HD NIGHT TEXTURE ---
+        globeImageUrl="//unpkg.com/three-globe/example/img/earth-night.jpg"
+        bumpImageUrl="//unpkg.com/three-globe/example/img/earth-topology.png"
+
+        // --- COUNTRY INTERACTION LAYER (INVISIBLE FOR PERFORMANCE) ---
+        polygonsData={geoData?.features}
+        polygonCapColor={() => 'transparent'}
+        polygonSideColor={() => 'transparent'}
+        polygonStrokeColor={() => 'transparent'} // No lines, no lag
+        onPolygonClick={(polygon: any) => {
+          const name = polygon.properties.ADMIN || polygon.properties.NAME || polygon.properties.name || "UNIDENTIFIED SECTOR";
+          
+          // Update Minimal UI Overlay
+          setSelectedCountry({
+            name,
+            iso: polygon.properties.ISO_A3 || "N/A",
+            region: polygon.properties.REGION_UN || "GLOBAL"
+          });
+        }}
+
         showAtmosphere={true}
-        atmosphereColor="#4fc3f7"
+        atmosphereColor="#3a9ad9"
         atmosphereAltitude={0.15}
+
+        // --- HD LIGHTING & MATERIAL ---
+        onGlobeReady={() => {
+          if (globeRef.current) {
+            const scene = globeRef.current.scene();
+            const material = globeRef.current.getGlobeMaterial();
+            
+            material.bumpScale = 18;
+            
+            // 1. ADD CUSTOM HD LIGHTING
+            const dLight = new THREE.DirectionalLight(0xffffff, 1.5);
+            dLight.position.set(100, 100, 100);
+            scene.add(dLight);
+            
+            const rimLight = new THREE.SpotLight(0x3a9ad9, 3);
+            rimLight.position.set(-100, 10, -50);
+            scene.add(rimLight);
+
+            // 2. SPECULAR MAP (Water reflections)
+            new THREE.TextureLoader().load('//unpkg.com/three-globe/example/img/earth-water.png', texture => {
+              material.specularMap = texture;
+              material.specular = new THREE.Color('#333');
+              material.shininess = 35;
+            });
+
+            // 3. MOVING CLOUDS LAYER
+            const CLOUDS_IMG_URL = '//unpkg.com/three-globe/example/img/earth-clouds.png';
+            const CLOUDS_ALT = 0.006;
+            const CLOUDS_ROTATION_SPEED = -0.005;
+
+            new THREE.TextureLoader().load(CLOUDS_IMG_URL, cloudsTexture => {
+              const clouds = new THREE.Mesh(
+                new THREE.SphereGeometry(globeRef.current.getGlobeRadius() * (1 + CLOUDS_ALT), 75, 75),
+                new THREE.MeshPhongMaterial({ map: cloudsTexture, transparent: true, opacity: 0.4 })
+              );
+              scene.add(clouds);
+
+              (function rotateClouds() {
+                clouds.rotation.y += CLOUDS_ROTATION_SPEED * Math.PI / 180;
+                requestAnimationFrame(rotateClouds);
+              })();
+            });
+          }
+        }}
+        
         ringsData={ringsData}
         ringColor="color"
         ringMaxRadius="maxR"
@@ -404,6 +517,28 @@ export default function GlobeMap() {
                 </a>
               )}
             </div>
+          </div>
+        )}
+
+        {selectedCountry && (
+          <div style={{ 
+            position: 'absolute', 
+            top: '20px', 
+            left: '50%', 
+            transform: 'translateX(-50%)', 
+            zIndex: 1000,
+            background: 'rgba(10, 15, 25, 0.8)', 
+            backdropFilter: 'blur(8px)', 
+            border: '1px solid rgba(56, 189, 248, 0.4)', 
+            borderRadius: '4px', 
+            padding: '4px 12px',
+            color: '#38bdf8',
+            font: 'bold 10px "Orbitron", monospace',
+            letterSpacing: '2px',
+            boxShadow: '0 0 20px rgba(0,0,0,0.5)',
+            pointerEvents: 'none'
+          }}>
+            IDENTIFIED SECTOR: <span style={{ color: '#fff' }}>{selectedCountry.name}</span>
           </div>
         )}
 

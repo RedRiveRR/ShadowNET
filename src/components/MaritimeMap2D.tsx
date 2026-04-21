@@ -6,29 +6,34 @@ import { Ship, X, Anchor, Navigation, Activity } from 'lucide-react';
 interface GhostVessel extends Vessel {
   visualLat: number;
   visualLng: number;
+  visualCourse: number; // Added for smooth rotation
   targetLat: number;
   targetLng: number;
   isGhost: boolean;
   lastSeen: number;
 }
 
-const GHOST_TURNOFF_MS = 5 * 60 * 1000; // 5 min total disappearance
-const STALE_THRESHOLD_MS = 30 * 1000;  // 30 sec to become "ghost" visual
+const GHOST_TURNOFF_MS = 10 * 60 * 1000; // Increased to 10 min
+const STALE_THRESHOLD_MS = 60 * 1000;  // 1 min to become "ghost"
 
 // === TACTICAL INTELLIGENCE ===
-const DANGER_ZONES = [
-    { name: 'RED SEA / BAB-EL-MANDEB', bounds: { minLat: 10, maxLat: 28, minLng: 32, maxLng: 52 }, severity: 'HIGH' },
-    { name: 'BLACK SEA / CRIMEA', bounds: { minLat: 39, maxLat: 48, minLng: 27, maxLng: 42 }, severity: 'CRITICAL' },
-    { name: 'SOUTH CHINA SEA', bounds: { minLat: -4, maxLat: 25, minLng: 105, maxLng: 122 }, severity: 'MEDIUM' },
-    { name: 'STRAIT OF HORMUZ', bounds: { minLat: 24, maxLat: 28, minLng: 54, maxLng: 60 }, severity: 'CRITICAL' },
-    { name: 'ISTANBUL STRAIT (BOSPHORUS)', bounds: { minLat: 40.8, maxLat: 41.3, minLng: 28.8, maxLng: 29.3 }, severity: 'MEDIUM' },
-    { name: 'MALACCA STRAIT (SINGAPORE)', bounds: { minLat: 1.0, maxLat: 1.6, minLng: 102.5, maxLng: 104.8 }, severity: 'HIGH' },
+// === STRATEGIC CHOKEPOINTS (Replaces generic war zones) ===
+const STRATEGIC_CHOKEPOINTS = [
+    { name: 'ISTANBUL STRAIT (BOSPHORUS)', bounds: { minLat: 40.8, maxLat: 41.3, minLng: 28.8, maxLng: 29.3 }, severity: 'STRATEGIC' },
+    { name: 'DARDANELLES (CANAKKALE)', bounds: { minLat: 39.8, maxLat: 40.5, minLng: 26.2, maxLng: 26.8 }, severity: 'STRATEGIC' },
+    { name: 'SUEZ CANAL', bounds: { minLat: 29.8, maxLat: 31.3, minLng: 32.2, maxLng: 32.7 }, severity: 'STRATEGIC' },
+    { name: 'STRAIT OF HORMUZ', bounds: { minLat: 24.0, maxLat: 28.0, minLng: 54.0, maxLng: 60.0 }, severity: 'CRITICAL' },
+    { name: 'MALACCA STRAIT', bounds: { minLat: 1.0, maxLat: 1.6, minLng: 102.5, maxLng: 104.8 }, severity: 'HIGH' },
     { name: 'PANAMA CANAL', bounds: { minLat: 8.8, maxLat: 9.5, minLng: -80.1, maxLng: -79.4 }, severity: 'MEDIUM' },
-    { name: 'STRAIT OF GIBRALTAR', bounds: { minLat: 35.7, maxLat: 36.3, minLng: -5.8, maxLng: -5.1 }, severity: 'MEDIUM' }
+    { name: 'STRAIT OF GIBRALTAR', bounds: { minLat: 35.7, maxLat: 36.3, minLng: -5.8, maxLng: -5.1 }, severity: 'HIGH' },
+    { name: 'BAB-EL-MANDEB', bounds: { minLat: 12.4, maxLat: 13.5, minLng: 43.1, maxLng: 43.8 }, severity: 'CRITICAL' }
 ];
 
 export default function MaritimeMap2D() {
-  const [selectedVessel, setSelectedVessel] = useState<Vessel | null>(null);
+  const vessels = useMetricsStore(state => state.vessels);
+  const setSelectedVesselStore = useMetricsStore(state => state.setSelectedVessel);
+
+  const [selectedVessel, setSelectedLocal] = useState<Vessel | null>(null);
   const [dimensions, setDimensions] = useState({ width: window.innerWidth, height: window.innerHeight });
   const [geoData, setGeoData] = useState<any>(null);
   const [activeCount, setActiveCount] = useState(0);
@@ -40,8 +45,12 @@ export default function MaritimeMap2D() {
   const lastUpdateRef = useRef<number>(Date.now());
   const pulseRef = useRef(0);
   
-  // Pan-Zoom State
-  const transformRef = useRef({ x: 0, y: 0, k: 3 });
+  // Pan-Zoom State: CENTERED ON BOSPHORUS / TURKEY (V12)
+  const initialK = 14; 
+  const initialX = (window.innerWidth / 2) - ((29 + 180) * (window.innerWidth / 360) * initialK);
+  const initialY = (window.innerHeight / 2) - ((90 - 41.1) * (window.innerHeight / 180) * initialK);
+
+  const transformRef = useRef({ x: initialX, y: initialY, k: initialK });
   const isDragging = useRef(false);
   const startDrag = useRef({ x: 0, y: 0 });
   const dragDistance = useRef(0);
@@ -98,12 +107,16 @@ export default function MaritimeMap2D() {
         const existing = ghostMap.get(v.id);
         if (existing) {
           existing.targetLat = v.lat; existing.targetLng = v.lng;
-          existing.course = v.course; existing.speed = v.speed;
+          existing.speed = v.speed;
+          // Smooth course target adjustment
+          existing.course = v.course;
           existing.name = v.name; existing.lastUpdate = v.lastUpdate;
           existing.isGhost = false;
         } else {
+          // INSTANT SPAWN: First time seeing this vessel, no interpolation
           ghostMap.set(v.id, {
-            ...v, visualLat: v.lat, visualLng: v.lng, targetLat: v.lat, targetLng: v.lng,
+            ...v, visualLat: v.lat, visualLng: v.lng, visualCourse: v.course,
+            targetLat: v.lat, targetLng: v.lng,
             isGhost: false, lastSeen: now
           });
         }
@@ -114,14 +127,22 @@ export default function MaritimeMap2D() {
         if (timeSinceUpdate > GHOST_TURNOFF_MS) { ghostMap.delete(id); continue; }
         gv.isGhost = timeSinceUpdate > STALE_THRESHOLD_MS;
 
-        gv.visualLat += (gv.targetLat - gv.visualLat) * 0.15;
-        gv.visualLng += (gv.targetLng - gv.visualLng) * 0.15;
+        // Smooth Precision Interpolation (0.1 for high speed updates)
+        gv.visualLat += (gv.targetLat - gv.visualLat) * 0.1;
+        gv.visualLng += (gv.targetLng - gv.visualLng) * 0.1;
 
-        if (timeSinceUpdate > 5000 && gv.speed > 2) {
+        // Smooth Compass Rotation (Lerp angle)
+        let diff = (gv.course - gv.visualCourse + 180 + 360) % 360 - 180;
+        gv.visualCourse += diff * 0.12;
+
+        // Predictive Dead Reckoning (Glide logic)
+        if (timeSinceUpdate > 3000 && gv.speed > 0.5) {
             const mps = gv.speed * 0.5144;
-            const courseRad = gv.course * Math.PI / 180;
-            gv.targetLat += (mps * dt / 111111) * Math.cos(courseRad);
-            gv.targetLng += (mps * dt / (111111 * Math.cos(gv.visualLat * Math.PI / 180))) * Math.sin(courseRad);
+            const courseRad = gv.visualCourse * Math.PI / 180;
+            const driftLat = (mps * dt / 111111) * Math.cos(courseRad);
+            const driftLng = (mps * dt / (111111 * Math.cos(gv.visualLat * Math.PI / 180))) * Math.sin(courseRad);
+            gv.targetLat += driftLat;
+            gv.targetLng += driftLng;
         }
       }
 
@@ -130,24 +151,23 @@ export default function MaritimeMap2D() {
         const { width, height } = dimensions;
         ctx.clearRect(0, 0, width, height);
         
-        // --- DRAW DANGER ZONES ---
-        DANGER_ZONES.forEach(zone => {
+        // --- DRAW STRATEGIC CHOKEPOINTS ---
+        STRATEGIC_CHOKEPOINTS.forEach(zone => {
             const x1 = (zone.bounds.minLng + 180) * (width / 360) * k + x;
             const y1 = (90 - zone.bounds.maxLat) * (height / 180) * k + y;
             const x2 = (zone.bounds.maxLng + 180) * (width / 360) * k + x;
             const y2 = (90 - zone.bounds.minLat) * (height / 180) * k + y;
             
-            ctx.fillStyle = zone.severity === 'CRITICAL' ? 'rgba(239, 68, 68, 0.08)' : 'rgba(245, 158, 11, 0.05)';
-            ctx.strokeStyle = zone.severity === 'CRITICAL' ? 'rgba(239, 68, 68, 0.3)' : 'rgba(245, 158, 11, 0.2)';
-            ctx.setLineDash([5, 5]);
+            ctx.fillStyle = zone.severity === 'CRITICAL' ? 'rgba(239, 68, 68, 0.05)' : 'rgba(34, 211, 238, 0.03)';
+            ctx.strokeStyle = zone.severity === 'CRITICAL' ? 'rgba(239, 68, 68, 0.25)' : 'rgba(34, 211, 238, 0.15)';
+            ctx.lineWidth = 1;
             ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
             ctx.fillRect(x1, y1, x2 - x1, y2 - y1);
-            ctx.setLineDash([]);
             
-            if (k > 5) {
+            if (k > 8) {
                 ctx.fillStyle = ctx.strokeStyle as string;
-                ctx.font = 'bold 10px monospace';
-                ctx.fillText(`! ${zone.name}`, x1 + 5, y1 - 5);
+                ctx.font = 'bold 9px Orbitron, monospace';
+                ctx.fillText(`LOCKED // ${zone.name}`, x1 + 4, y1 - 4);
             }
         });
 
@@ -164,8 +184,8 @@ export default function MaritimeMap2D() {
 
           if (!isVisible) return;
 
-          // Danger Detection
-          const inDanger = DANGER_ZONES.find(z => 
+          // Chokepoint Detection
+          const inChokepoint = STRATEGIC_CHOKEPOINTS.find(z => 
             gv.visualLat >= z.bounds.minLat && gv.visualLat <= z.bounds.maxLat &&
             gv.visualLng >= z.bounds.minLng && gv.visualLng <= z.bounds.maxLng
           );
@@ -173,20 +193,36 @@ export default function MaritimeMap2D() {
           const isSelected = selectedVessel?.id === gv.id;
           const opacity = gv.isGhost ? Math.max(0.1, 1 - (now - gv.lastUpdate) / GHOST_TURNOFF_MS) : 1;
 
+          // --- DRAW WAKE TRAIL ---
+          if (!gv.isGhost && gv.speed > 1) {
+            const wakeLen = Math.min(20, gv.speed * 2);
+            ctx.save();
+            ctx.beginPath();
+            ctx.moveTo(screenX, screenY);
+            const wakeX = screenX - Math.sin((gv.visualCourse * Math.PI) / 180) * wakeLen * k / 10;
+            const wakeY = screenY + Math.cos((gv.visualCourse * Math.PI) / 180) * wakeLen * k / 10;
+            ctx.lineTo(wakeX, wakeY);
+            ctx.strokeStyle = inChokepoint ? 'rgba(239, 68, 68, 0.3)' : 'rgba(34, 211, 238, 0.2)';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+            ctx.restore();
+          }
+
           ctx.save();
           ctx.translate(screenX, screenY);
           
-          const baseScale = Math.max(0.4, Math.min(k / 10, 1.5));
+          // Adaptive Scaling: Shrink when zoomed out to prevent overlap
+          const baseScale = Math.max(0.2, Math.min(k / 15, 1.2));
           ctx.scale(baseScale, baseScale);
-          ctx.rotate((gv.course * Math.PI) / 180);
+          ctx.rotate((gv.visualCourse * Math.PI) / 180); // Using smooth visualCourse
           ctx.globalAlpha = opacity;
 
-          if (inDanger) {
-              const pulse = Math.sin(pulseRef.current * 2) * 0.5 + 0.5;
+          if (inChokepoint) {
+              const pulse = Math.sin(pulseRef.current * 3) * 0.5 + 0.5;
               ctx.beginPath();
-              ctx.arc(0, 0, 15 + pulse * 10, 0, Math.PI * 2);
+              ctx.arc(0, 0, 12 + pulse * 6, 0, Math.PI * 2);
               ctx.strokeStyle = '#ef4444';
-              ctx.lineWidth = 2 / baseScale;
+              ctx.lineWidth = 1 / baseScale;
               ctx.stroke();
           }
 
@@ -198,13 +234,16 @@ export default function MaritimeMap2D() {
           ctx.bezierCurveTo(-5, 5, -5, -5, 0, -10);
           ctx.closePath();
           
-          ctx.fillStyle = inDanger ? '#ef4444' : isSelected ? '#38bdf8' : gv.isGhost ? '#64748b' : '#22d3ee';
+          ctx.fillStyle = inChokepoint ? '#ef4444' : isSelected ? '#38bdf8' : gv.isGhost ? '#64748b' : '#22d3ee';
+          ctx.shadowBlur = isSelected ? 15 : 0;
+          ctx.shadowColor = ctx.fillStyle as string;
           ctx.fill();
+          ctx.shadowBlur = 0;
           
           if (!gv.isGhost && gv.speed > 0.5) {
             ctx.beginPath();
             ctx.moveTo(0, -10);
-            ctx.lineTo(0, -10 - (gv.speed * 1.5)); // Longer vectors for high speed
+            ctx.lineTo(0, -10 - (gv.speed * 2)); // Longer vectors
             ctx.strokeStyle = ctx.fillStyle as string;
             ctx.lineWidth = 2 / baseScale;
             ctx.stroke();
@@ -212,20 +251,20 @@ export default function MaritimeMap2D() {
           
           ctx.restore();
 
-          if (k > 10 || isSelected || inDanger) {
+          if (k > 10 || isSelected || inChokepoint) {
             ctx.globalAlpha = opacity;
-            ctx.fillStyle = inDanger ? '#ef4444' : isSelected ? '#fff' : 'rgba(255,255,255,0.7)';
-            ctx.font = `bold ${Math.max(8, Math.min(12, k/2))}px monospace`;
+            ctx.fillStyle = inChokepoint ? '#ef4444' : isSelected ? '#fff' : 'rgba(34, 211, 238, 0.7)';
+            ctx.font = `bold ${Math.max(8, Math.min(11, k/3))}px monospace`;
             ctx.textAlign = 'center';
-            const labelY = 15 * baseScale + 10;
+            const labelY = 18 * baseScale + 10;
             ctx.fillText(gv.name.toUpperCase(), screenX, screenY + labelY);
             
-            if (isSelected || inDanger) {
-                ctx.font = '8px monospace';
+            if (isSelected || inChokepoint) {
+                ctx.font = '7px monospace';
                 ctx.fillText(`${gv.speed.toFixed(1)} KN | ${gv.course.toFixed(0)}°`, screenX, screenY + labelY + 10);
-                if (inDanger) {
+                if (inChokepoint) {
                     ctx.fillStyle = '#ef4444';
-                    ctx.fillText('SIGNAL AT RISK // STRATEGIC CHOKEPOINT', screenX, screenY + labelY + 20);
+                    ctx.fillText('TRANSIT MONITORING ACTIVE', screenX, screenY + labelY + 20);
                 }
             }
           }
@@ -299,8 +338,13 @@ export default function MaritimeMap2D() {
       const dist = Math.hypot(screenX - clickX, screenY - clickY);
       if (dist < minDist) { minDist = dist; closest = gv; }
     });
-    setSelectedVessel(closest);
+    setSelectedLocal(closest);
+    setSelectedVesselStore(closest);
   };
+
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [isAlertOpen, setIsAlertOpen] = useState(true);
+  const [isLegendOpen, setIsLegendOpen] = useState(true);
 
   return (
     <div 
@@ -314,100 +358,306 @@ export default function MaritimeMap2D() {
       <svg width="100%" height="100%" style={{ position: 'absolute', top: 0, left: 0, pointerEvents: 'none' }}>
         <g ref={mapGroupRef}>
           {memoizedPaths.map((path: string, i: number) => (
-            <path key={i} d={path} fill="rgba(15, 23, 42, 0.4)" stroke="rgba(56, 189, 248, 0.08)" strokeWidth={0.3 / transformRef.current.k} />
+            <path key={i} d={path} fill="rgba(10, 15, 25, 0.9)" stroke="rgba(34, 211, 238, 0.2)" strokeWidth={0.5 / transformRef.current.k} />
           ))}
         </g>
       </svg>
 
       <canvas ref={canvasRef} width={dimensions.width} height={dimensions.height} style={{ position: 'absolute', top: 0, left: 0 }} onClick={handleCanvasClick} />
 
-      {/* TACTICAL HUD */}
-      <div style={{ position: 'absolute', top: '80px', left: '24px', zIndex: 10, display: 'flex', flexDirection: 'column', gap: '12px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', color: '#22d3ee' }}>
-          <div style={{ padding: '8px', background: 'rgba(34, 211, 238, 0.1)', borderRadius: '10px', border: '1px solid rgba(34, 211, 238, 0.4)', boxShadow: '0 0 15px rgba(34, 211, 238, 0.2)' }}>
-            <Anchor size={24} className="animate-pulse" />
+      {/* TACTICAL HUD - PREMIUM GLASS */}
+      <div style={{ position: 'absolute', top: '24px', left: '24px', zIndex: 10, display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+          <div style={{ 
+            padding: '10px', 
+            background: 'rgba(34, 211, 238, 0.1)', 
+            borderRadius: '12px', 
+            border: '1px solid rgba(34, 211, 238, 0.3)', 
+            boxShadow: '0 0 20px rgba(34, 211, 238, 0.15)',
+            backdropFilter: 'blur(10px)'
+          }}>
+            <Anchor size={28} style={{ color: '#22d3ee' }} />
           </div>
-          <div>
-            <h2 style={{ margin: 0, fontSize: '1.4rem', letterSpacing: '4px', fontWeight: 'bold', textShadow: '0 0 15px rgba(34, 211, 238, 0.6)' }}>SHADOWNET MARITIME</h2>
-            <div style={{ fontSize: '0.65rem', color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px', fontFamily: 'monospace' }}>
-                <Activity size={12} /> <span style={{ color: '#22d3ee' }}>ACTIVE SIGNALS: {activeCount.toLocaleString()}</span> // SINGLETON V11
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            <h2 style={{ 
+              margin: 0, 
+              fontSize: '1.6rem', 
+              letterSpacing: '5px', 
+              fontWeight: '900', 
+              color: '#fff', 
+              fontFamily: 'Orbitron, sans-serif',
+              textShadow: '0 0 20px rgba(34, 211, 238, 0.4)'
+            }}>SHADOWNET MARITIME</h2>
+            <div style={{ fontSize: '0.65rem', color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px', fontFamily: 'monospace', letterSpacing: '1px' }}>
+                <Activity size={12} style={{ color: '#22d3ee' }} /> 
+                <span style={{ color: '#22d3ee', fontWeight: 'bold' }}>TRACKING: {activeCount.toLocaleString()} VESSELS</span>
+                <span style={{ opacity: 0.3 }}>|</span>
+                <span>RELAY: ACTIVE</span>
             </div>
           </div>
         </div>
       </div>
 
-      {/* CONFLICT ZONE DATA NOTICE (BILINGUAL) */}
-      <div style={{ 
-        position: 'absolute', 
-        top: '80px', 
-        right: '24px', 
-        zIndex: 10, 
-        maxWidth: '320px', 
-        background: 'rgba(13, 17, 23, 0.85)', 
-        backdropFilter: 'blur(12px)', 
-        border: '1px solid #ef4444', 
-        borderLeft: '4px solid #ef4444',
-        borderRadius: '4px 12px 12px 4px', 
-        padding: '16px',
-        boxShadow: '0 10px 30px rgba(239, 68, 68, 0.15)'
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
-          <div style={{ width: '10px', height: '10px', background: '#ef4444', borderRadius: '50%', animation: 'pulse 1s infinite' }} />
-          <span style={{ color: '#ef4444', fontSize: '0.75rem', fontWeight: '900', letterSpacing: '2px' }}>CRITICAL COVERAGE WARNING</span>
-        </div>
-        
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-          <div>
-            <p style={{ color: '#fff', fontSize: '0.65rem', fontWeight: 'bold', margin: '0 0 4px 0', textTransform: 'uppercase' }}>EN: Tactical Restrictions Active</p>
-            <p style={{ color: '#94a3b8', fontSize: '0.6rem', margin: 0, lineHeight: '1.4' }}>
-              Conflict zone vessel tracking (Black/Red Sea) requires Tier-2 API. Direct telemetry may be spoofed or obfuscated in kinetic zones.
-            </p>
+      {/* CONFLICT ZONE DATA NOTICE - PREMIUM RED GLASS (WITH TOGGLE) */}
+      <div style={{ position: 'absolute', top: '24px', right: '24px', zIndex: 10, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '10px' }}>
+        {!isAlertOpen && (
+          <button 
+            onClick={() => setIsAlertOpen(true)}
+            style={{ 
+              background: 'rgba(239, 68, 68, 0.1)', 
+              border: '1px solid rgba(239, 68, 68, 0.3)', 
+              borderRadius: '8px', 
+              padding: '10px 15px', 
+              color: '#ef4444', 
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              backdropFilter: 'blur(10px)',
+              fontFamily: 'Orbitron',
+              fontSize: '0.6rem',
+              letterSpacing: '1px'
+            }}
+          >
+            <Activity size={14} /> COVERAGE ALERT
+          </button>
+        )}
+
+        {isAlertOpen && (
+          <div style={{ 
+            maxWidth: '340px', 
+            background: 'rgba(10, 15, 25, 0.8)', 
+            backdropFilter: 'blur(20px)', 
+            border: '1px solid rgba(239, 68, 68, 0.3)', 
+            borderLeft: '4px solid #ef4444',
+            borderRadius: '8px 16px 16px 8px', 
+            padding: '20px',
+            boxShadow: '0 15px 40px rgba(239, 68, 68, 0.1)',
+            animation: 'slideRight 0.5s ease',
+            position: 'relative'
+          }}>
+            <button 
+              onClick={() => setIsAlertOpen(false)}
+              style={{ position: 'absolute', top: '10px', right: '10px', background: 'none', border: 'none', color: 'rgba(239,68,68,0.5)', cursor: 'pointer' }}
+            >
+                <X size={16} />
+            </button>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
+              <div style={{ width: '10px', height: '10px', background: '#ef4444', borderRadius: '50%', animation: 'pulse 1s infinite', boxShadow: '0 0 10px #ef4444' }} />
+              <span style={{ color: '#ef4444', fontSize: '0.75rem', fontWeight: '900', letterSpacing: '2px', fontFamily: 'Orbitron' }}>COVERAGE ALERT</span>
+            </div>
+            
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div style={{ position: 'relative', paddingLeft: '15px' }}>
+                    <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '1px', background: 'rgba(239, 68, 68, 0.2)' }} />
+                    <p style={{ color: '#fff', fontSize: '0.65rem', fontWeight: 'bold', margin: '0 0 4px 0', letterSpacing: '0.5px' }}>EN: TACTICAL RESTRICTIONS ACTIVE</p>
+                    <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: '0.6rem', margin: 0, lineHeight: '1.5' }}>
+                    Direct telemetry may be spoofed or obfuscated in kinetic zones. Tier-2 sensor fusion required.
+                    </p>
+                </div>
+                
+                <div style={{ position: 'relative', paddingLeft: '15px' }}>
+                    <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '1px', background: 'rgba(239, 68, 68, 0.2)' }} />
+                    <p style={{ color: '#fff', fontSize: '0.65rem', fontWeight: 'bold', margin: '0 0 4px 0', letterSpacing: '0.5px' }}>TR: TAKTİKSEL KISITLAMA AKTİF</p>
+                    <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: '0.6rem', margin: 0, lineHeight: '1.5' }}>
+                    Sıcak bölgelerde canlı veriler gizlenmiş veya gecikmeli olabilir. Sensör füzyonu devrededir.
+                    </p>
+                </div>
+            </div>
           </div>
-          
-          <div style={{ borderTop: '1px solid rgba(239, 68, 68, 0.2)', paddingTop: '10px' }}>
-            <p style={{ color: '#fff', fontSize: '0.65rem', fontWeight: 'bold', margin: '0 0 4px 0', textTransform: 'uppercase' }}>TR: Taktiksel Kısıtlama Aktif</p>
-            <p style={{ color: '#94a3b8', fontSize: '0.6rem', margin: 0, lineHeight: '1.4' }}>
-              Çatışma bölgesi takibi (Karadeniz/Kızıldeniz) Tier-2 API gerektirir. Sıcak bölgelerde canlı veriler gizlenmiş veya gecikmeli olabilir.
-            </p>
-          </div>
-        </div>
+        )}
       </div>
 
-      <div style={{ position: 'absolute', bottom: '120px', left: '30px', color: 'rgba(255,255,255,0.4)', fontSize: '0.6rem', fontFamily: 'monospace', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-        <div>LAT: {((90 - ( ( (dimensions.height/2) - transformRef.current.y) / transformRef.current.k) / (dimensions.height/180) )).toFixed(4)}</div>
-        <div>LNG: {(( ( (dimensions.width/2) - transformRef.current.x) / transformRef.current.k) / (dimensions.width/360) - 180).toFixed(4)}</div>
-      </div>
+      {/* SAĞ LİSTE PANELİ - PREMIUM GLASS (SYNCED WITH RADAR) */}
+      {isSidebarOpen ? (
+        <div style={{ position: 'absolute', top: '100px', right: 0, zIndex: 100, display: 'flex', alignItems: 'flex-start' }}>
+          <div style={{ 
+            width: '360px', 
+            background: 'rgba(10, 15, 25, 0.85)', 
+            borderLeft: '1px solid rgba(34, 211, 238, 0.2)', 
+            backdropFilter: 'blur(30px)', 
+            display: 'flex', 
+            flexDirection: 'column', 
+            height: 'calc(100vh - 200px)',
+            borderRadius: '20px 0 0 20px',
+            boxShadow: '-20px 0 50px rgba(0,0,0,0.5)',
+            overflow: 'hidden',
+            animation: 'slideRight 0.5s cubic-bezier(0.16, 1, 0.3, 1)',
+            position: 'relative'
+          }}>
+            <div style={{ padding: '24px 20px', borderBottom: '1px solid rgba(34, 211, 238, 0.1)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <span style={{ fontSize: '0.6rem', color: '#22d3ee', letterSpacing: '3px', fontWeight: 'bold' }}>MARITIME RADAR</span>
+                <span style={{ fontWeight: '900', fontSize: '1.2rem', color: '#fff', fontFamily: 'Orbitron, sans-serif' }}>ACTIVE VESSELS</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <span style={{ background: 'rgba(34, 211, 238, 0.1)', border: '1px solid rgba(34, 211, 238, 0.3)', color: '#22d3ee', padding: '4px 10px', borderRadius: '6px', fontSize: '0.8rem', fontWeight: 'bold', fontFamily: 'monospace' }}>
+                  {(vessels || []).length}
+                </span>
+                <button 
+                  onClick={() => setIsSidebarOpen(false)} 
+                  style={{ background: 'rgba(255,255,255,0.05)', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: '8px', borderRadius: '50%' }}
+                >
+                  <X size={18} />
+                </button>
+              </div>
+            </div>
 
+            <div className="custom-scrollbar" style={{ flex: 1, overflowY: 'auto', padding: '15px' }}>
+              {(vessels || []).slice(0, 100).map(v => {
+                  const isSelected = selectedVessel?.id === v.id;
+                  return (
+                    <div 
+                      key={v.id} 
+                      onClick={() => { setSelectedLocal(v); setSelectedVesselStore(v); }}
+                      style={{ 
+                        padding: '14px', 
+                        borderRadius: '12px', 
+                        background: isSelected ? 'rgba(34,211,238,0.1)' : 'rgba(255,255,255,0.02)',
+                        border: isSelected ? '1px solid rgba(34,211,238,0.5)' : '1px solid rgba(255,255,255,0.05)',
+                        cursor: 'pointer',
+                        marginBottom: '8px',
+                        transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                        position: 'relative'
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                        <span style={{ fontWeight: 'bold', color: isSelected ? '#fff' : 'rgba(255,255,255,0.8)', fontSize: '0.9rem', fontFamily: 'monospace' }}>{v.name.toUpperCase()}</span>
+                        <span style={{ color: '#22d3ee', fontSize: '0.7rem', fontWeight: 'bold' }}>{v.speed.toFixed(1)} KN</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.6rem', color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                        <span>MMSI: {v.mmsi}</span>
+                        <span>HDG: {v.course.toFixed(0)}°</span>
+                      </div>
+                    </div>
+                  );
+              })}
+            </div>
+          </div>
+        </div>
+      ) : (
+        <button 
+          onClick={() => setIsSidebarOpen(true)}
+          style={{ 
+            position: 'absolute', top: '100px', right: '0', 
+            background: 'rgba(10, 15, 25, 0.9)', 
+            border: '1px solid rgba(56, 189, 248, 0.3)', 
+            borderRight: 'none', 
+            borderRadius: '12px 0 0 12px', 
+            padding: '16px 10px', 
+            color: '#38bdf8', 
+            cursor: 'pointer', 
+            zIndex: 100, 
+            backdropFilter: 'blur(10px)', 
+            boxShadow: '-10px 0 30px rgba(0,0,0,0.5)', 
+            transition: 'all 0.3s ease' 
+          }}
+        >
+          <Navigation size={22} />
+        </button>
+      )}
+
+      {/* VESSEL DETAIL CARD - PREMIUM TOP-CENTER */}
       {selectedVessel && (
-        <div style={{ position: 'absolute', bottom: '24px', right: '24px', zIndex: 100, width: '320px', background: 'rgba(13, 17, 23, 0.95)', backdropFilter: 'blur(16px)', border: '1px solid rgba(56, 189, 248, 0.4)', borderRadius: '16px', padding: '20px', color: '#fff', boxShadow: '0 20px 50px rgba(0,0,0,0.8)', animation: 'slideIn 0.3s ease-out' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '16px' }}>
-            <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                <div style={{ padding: '8px', background: 'rgba(56, 189, 248, 0.1)', borderRadius: '10px' }}>
-                    <Ship color="#22d3ee" size={20} />
+        <div style={{ 
+          position: 'absolute', 
+          top: '110px', 
+          left: '50%', 
+          transform: 'translateX(-50%)',
+          width: '420px', 
+          background: 'rgba(10, 15, 25, 0.85)', 
+          backdropFilter: 'blur(30px)', 
+          border: '1px solid rgba(34, 211, 238, 0.3)', 
+          borderRadius: '20px', 
+          padding: '24px', 
+          color: '#fff', 
+          boxShadow: '0 30px 60px rgba(0,0,0,0.7), 0 0 20px rgba(34, 211, 238, 0.1)', 
+          animation: 'slideDown 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
+          zIndex: 1000 
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px', alignItems: 'center' }}>
+            <div style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
+                <div style={{ padding: '10px', background: 'rgba(34, 211, 238, 0.1)', borderRadius: '12px' }}>
+                    <Ship color="#22d3ee" size={24} />
                 </div>
                 <div>
-                    <span style={{ fontWeight: 'bold', fontSize: '1rem', display: 'block' }}>{selectedVessel.name.toUpperCase()}</span>
-                    <span style={{ fontSize: '0.6rem', color: '#94a3b8' }}>FLAG: {selectedVessel.flag || 'UNKNOWN'}</span>
+                    <span style={{ fontSize: '0.6rem', color: 'rgba(34, 211, 238, 0.7)', letterSpacing: '2px', fontWeight: 'bold' }}>VESSEL IDENTIFIED</span>
+                    <span style={{ fontWeight: '900', fontSize: '1.3rem', display: 'block', fontFamily: 'Orbitron, sans-serif', color: '#fff' }}>{selectedVessel.name.toUpperCase()}</span>
                 </div>
             </div>
-            <button onClick={() => setSelectedVessel(null)} style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: '4px' }}><X size={20} /></button>
+            <button onClick={() => { setSelectedLocal(null); setSelectedVesselStore(null); }} style={{ background: 'rgba(255,255,255,0.05)', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: '8px', borderRadius: '50%' }}><X size={20} /></button>
           </div>
           
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', fontSize: '0.8rem', background: 'rgba(0,0,0,0.2)', padding: '12px', borderRadius: '12px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '15px', background: 'rgba(255,255,255,0.03)', padding: '16px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.05)' }}>
             <DataField label="MMSI" value={selectedVessel.mmsi} />
-            <DataField label="COURSE" value={`${selectedVessel.course}°`} icon={<Navigation size={10} style={{ transform: `rotate(${selectedVessel.course}deg)` }} />} />
+            <DataField label="COURSE" value={`${selectedVessel.course}°`} />
             <DataField label="SPEED" value={`${selectedVessel.speed.toFixed(1)} KN`} />
-            <DataField label="STATUS" value={ (Date.now() - selectedVessel.lastUpdate > 30000) ? 'SIGNAL WEAK' : 'STABLE'} color={ (Date.now() - selectedVessel.lastUpdate > 30000) ? '#f59e0b' : '#22c55e'} />
           </div>
-          
-          <div style={{ marginTop: '12px', fontSize: '0.65rem', color: '#64748b', fontStyle: 'italic', textAlign: 'center' }}>
-            Data intercepted via ShadowNet Singleton Relay V10
-          </div>
+
+          {Date.now() - selectedVessel.lastUpdate > 60000 && (
+              <div style={{ marginTop: '15px', padding: '10px', background: 'rgba(245, 158, 11, 0.1)', borderRadius: '8px', border: '1px solid rgba(245, 158, 11, 0.2)', fontSize: '0.7rem', color: '#f59e0b', fontFamily: 'monospace', textAlign: 'center', letterSpacing: '1px', fontWeight: 'bold' }}>
+                ALERT: SIGNAL PERSISTENCE LOW
+              </div>
+          )}
         </div>
       )}
 
+      {/* TACTICAL LEGEND (Sol Alt) */}
+      <div style={{ position: 'absolute', bottom: '24px', left: '24px', zIndex: 1000 }}>
+        {!isLegendOpen ? (
+          <button 
+            onClick={() => setIsLegendOpen(true)}
+            style={{ 
+              background: 'rgba(10, 15, 25, 0.9)', 
+              padding: '10px', 
+              color: '#38bdf8', 
+              cursor: 'pointer', 
+              borderRadius: '8px', 
+              border: '1px solid rgba(56, 189, 248, 0.3)',
+              backdropFilter: 'blur(10px)',
+              boxShadow: '0 0 15px rgba(56, 189, 248, 0.2)'
+            }}
+          >
+            <Activity size={18} />
+          </button>
+        ) : (
+          <div style={{ 
+            padding: '16px', 
+            background: 'rgba(10, 15, 25, 0.9)', 
+            border: '1px solid rgba(56, 189, 248, 0.3)', 
+            borderRadius: '12px', 
+            position: 'relative',
+            backdropFilter: 'blur(15px)',
+            width: '240px',
+            animation: 'slideUp 0.4s ease-out'
+          }}>
+            <button 
+              onClick={() => setIsLegendOpen(false)} 
+              style={{ position: 'absolute', top: '8px', right: '8px', background: 'none', border: 'none', color: '#38bdf8', cursor: 'pointer' }}
+            >
+              <X size={14}/>
+            </button>
+            <div style={{ color: '#38bdf8', fontWeight: 'bold', marginBottom: '12px', borderBottom: '1px solid rgba(56, 189, 248, 0.2)', paddingBottom: '6px', fontSize: '0.75rem', letterSpacing: '1px' }}>
+              SYSTEM IDENTIFIERS
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <LegendItem color="#facc15" label="AERIAL ENTITY (LIVE)" type="triangle" />
+              <LegendItem color="#a855f7" label="SATELLITE / ISS NODE" type="square" />
+              <LegendItem color="#ec4899" label="ENCRYPTED TOR ENTRY" type="pulse" />
+              <LegendItem color="#ef4444" label="KINETIC CONFLICT ZONE" type="hatch" />
+              <LegendItem color="#f59e0b" label="SEISMIC EVENT (QUAKE)" type="circle" />
+              <LegendItem color="#22d3ee" label="MARITIME ENTITY (AIS)" type="hull" />
+              <LegendItem color="#fff" label="NEURAL LINK (CORRELATION)" type="mesh" />
+              <LegendItem color="#fbbf24" label="WHALE TX DETECTED" type="diamond" />
+            </div>
+          </div>
+        )}
+      </div>
+
       <style>{`
         @keyframes slideIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes slideUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
         .animate-pulse { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
       `}</style>
@@ -415,11 +665,34 @@ export default function MaritimeMap2D() {
   );
 }
 
-function DataField({ label, value, icon, color = '#fff' }: any) {
+function LegendItem({ color, label, type }: any) {
+  const getMarker = () => {
+    switch(type) {
+      case 'triangle': return <div style={{ width: 0, height: 0, borderLeft: '5px solid transparent', borderRight: '5px solid transparent', borderBottom: `9px solid ${color}` }} />;
+      case 'square': return <div style={{ width: '8px', height: '8px', border: `1px solid ${color}`, background: `${color}40` }} />;
+      case 'pulse': return <div style={{ width: '8px', height: '8px', background: color, borderRadius: '50%', boxShadow: `0 0 10px ${color}`, animation: 'pulse 1s infinite' }} />;
+      case 'hatch': return <div style={{ width: '10px', height: '10px', background: `repeating-linear-gradient(45deg, ${color}20, ${color}20 2px, ${color}60 2px, ${color}60 4px)` }} />;
+      case 'circle': return <div style={{ width: '8px', height: '8px', background: color, borderRadius: '50%' }} />;
+      case 'hull': return <div style={{ width: '6px', height: '10px', background: color, borderRadius: '40% 40% 10% 10%' }} />;
+      case 'mesh': return <div style={{ width: '10px', height: '10px', border: `1px solid ${color}`, borderRadius: '2px', opacity: 0.8 }} />;
+      case 'diamond': return <div style={{ width: '7px', height: '7px', background: color, transform: 'rotate(45deg)', boxShadow: `0 0 8px ${color}` }} />;
+      default: return <div style={{ width: '8px', height: '8px', background: color }} />;
+    }
+  };
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+      <div style={{ width: '16px', display: 'flex', justifyContent: 'center' }}>{getMarker()}</div>
+      <span style={{ color: '#cbd5e1', fontSize: '0.6rem', fontWeight: '500', letterSpacing: '0.5px' }}>{label}</span>
+    </div>
+  );
+}
+
+function DataField({ label, value, color = '#fff' }: any) {
     return (
-        <div>
-            <div style={{ color: '#94a3b8', fontSize: '0.55rem', textTransform: 'uppercase', marginBottom: '2px', letterSpacing: '1px' }}>{label}</div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color, fontWeight: '600' }}>{icon}{value}</div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+            <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.55rem', textTransform: 'uppercase', fontWeight: 'bold', letterSpacing: '1px' }}>{label}</div>
+            <div style={{ color, fontWeight: '900', fontSize: '0.9rem', fontFamily: 'Orbitron, monospace' }}>{value}</div>
         </div>
     );
 }

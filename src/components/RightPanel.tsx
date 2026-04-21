@@ -1,62 +1,133 @@
+import { useState } from 'react';
 import { useMetricsStore } from '../store/useMetricsStore';
-import { Plane, Globe, Activity, Rocket, Newspaper } from 'lucide-react';
+import { Plane, Activity, Rocket, ChevronRight, BarChart3, Ship } from 'lucide-react';
 import { APP_NAME, APP_VERSION } from '../config';
 
 export default function RightPanel() {
-  const { flights, earthquakes, iss, satellites, newsEvents } = useMetricsStore();
+  const { flights, earthquakes, iss, satellites, vessels } = useMetricsStore();
+  const [isOpen, setIsOpen] = useState(true);
 
   const maxMag = (earthquakes || []).length > 0 ? Math.max(...earthquakes.map(q => q.mag)) : 0;
   
   return (
-    <div className="glass-panel animate-slide-right" style={{ position: 'absolute', top: '2rem', right: '2rem', width: '310px', display: 'flex', flexDirection: 'column', gap: '1.2rem', zIndex: 10, padding: '1.5rem', background: 'rgba(15,23,42,0.85)', border: '1px solid rgba(56,189,248,0.2)' }}>
-      <div style={{ display: 'flex', alignItems: 'center', borderBottom: '1px solid rgba(56, 189, 248, 0.2)', paddingBottom: '1rem' }}>
-        <Globe color="#38bdf8" size={24} style={{ marginRight: '10px' }} />
-        <h2 style={{ fontSize: '1.25rem', color: '#fff', fontWeight: 'bold', letterSpacing: '1px' }}>HUB ANALYTICS</h2>
-      </div>
+    <div style={{ position: 'absolute', top: '110px', right: 0, zIndex: 100, display: 'flex', alignItems: 'flex-start' }}>
+      {!isOpen && (
+        <button 
+          onClick={() => setIsOpen(true)}
+          style={{ 
+            background: 'rgba(10, 15, 25, 0.9)', 
+            border: '1px solid rgba(56, 189, 248, 0.3)', 
+            borderRight: 'none', 
+            borderRadius: '12px 0 0 12px', 
+            padding: '16px 10px', 
+            color: '#38bdf8', 
+            cursor: 'pointer',
+            backdropFilter: 'blur(10px)',
+            boxShadow: '-10px 0 30px rgba(0,0,0,0.5)',
+            transition: 'all 0.3s ease'
+          }}
+        >
+          <BarChart3 size={22} />
+        </button>
+      )}
 
-      <div style={{ padding: '1.2rem', background: 'rgba(56, 189, 248, 0.08)', borderRadius: '12px', border: '1px solid rgba(56, 189, 248, 0.1)', display: 'flex', alignItems: 'center' }}>
-        <div style={{ background: '#38bdf8', padding: '10px', borderRadius: '8px', marginRight: '1rem' }}>
-          <Plane size={24} color="#020617"/>
-        </div>
-        <div>
-          <p style={{ fontSize: '0.6rem', color: '#94a3b8', fontWeight: 'bold', marginBottom: '4px' }}>AERIAL TRAFFIC</p>
-          <p className="mono" style={{ fontSize: '1.8rem', fontWeight: 'bold', color: '#38bdf8' }}>{flights.length}</p>
-        </div>
-      </div>
+      {isOpen && (
+        <div className="glass-panel animate-slide-right" style={{ 
+          width: '320px', 
+          display: 'flex', 
+          flexDirection: 'column', 
+          gap: '12px', 
+          padding: '24px', 
+          background: 'rgba(10, 15, 25, 0.85)', 
+          backdropFilter: 'blur(30px)',
+          border: '1px solid rgba(56, 189, 248, 0.2)',
+          borderRight: 'none',
+          borderRadius: '20px 0 0 20px',
+          boxShadow: '-20px 25px 60px rgba(0,0,0,0.6)'
+        }}>
+          
+          {/* ANALYTICS HEADER */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', borderBottom: '1px solid rgba(56, 189, 248, 0.1)', paddingBottom: '12px' }}>
+            <button onClick={() => setIsOpen(false)} style={{ background: 'rgba(255,255,255,0.05)', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: '6px', borderRadius: '50%' }}>
+                <ChevronRight size={18} />
+            </button>
+            <div style={{ display: 'flex', flexDirection: 'column', textAlign: 'right' }}>
+                <div style={{ fontSize: '0.6rem', color: '#38bdf8', letterSpacing: '3px', fontWeight: 'bold' }}>HUB ANALYTICS</div>
+                <div style={{ fontSize: '1rem', fontWeight: '900', color: '#fff', fontFamily: 'Orbitron, sans-serif' }}>CORE SYSTEMS</div>
+            </div>
+          </div>
 
-      <div style={{ padding: '1.2rem', background: 'rgba(239, 68, 68, 0.08)', borderRadius: '12px', border: '1px solid rgba(239, 68, 68, 0.1)', display: 'flex', alignItems: 'center' }}>
-        <div style={{ background: '#ef4444', padding: '10px', borderRadius: '8px', marginRight: '1rem' }}>
-          <Newspaper size={24} color="#020617"/>
-        </div>
-        <div>
-          <p style={{ fontSize: '0.6rem', color: '#94a3b8', fontWeight: 'bold', marginBottom: '4px' }}>SITUATIONAL AWARENESS</p>
-          <p className="mono" style={{ fontSize: '1.4rem', fontWeight: 'bold', color: '#ef4444' }}>{newsEvents.length} INCIDENTS</p>
-        </div>
-      </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            <AnalyticCell 
+              icon={<Plane size={20} />} 
+              label="AERIAL ENTITY (LIVE)" 
+              value={flights.length} 
+              subText="LIVE TRANSPONDER FEEDS"
+              color="#facc15"
+            />
 
-      <div style={{ padding: '1.2rem', background: 'rgba(168, 85, 247, 0.08)', borderRadius: '12px', border: '1px solid rgba(168, 85, 247, 0.1)', display: 'flex', alignItems: 'center' }}>
-        <div style={{ background: '#a855f7', padding: '10px', borderRadius: '8px', marginRight: '1rem' }}>
-          <Rocket size={24} color="#020617"/>
-        </div>
-        <div>
-          <p style={{ fontSize: '0.6rem', color: '#94a3b8', fontWeight: 'bold', marginBottom: '4px' }}>ORBITAL ASSETS</p>
-          <p className="mono" style={{ fontSize: '1.2rem', fontWeight: 'bold', color: '#a855f7' }}>{satellites.length + (iss ? 1 : 0)} OBJECTS</p>
-        </div>
-      </div>
+            <AnalyticCell 
+              icon={<Ship size={20} />} 
+              label="MARITIME ENTITY (AIS)" 
+              value={vessels.length} 
+              subText="LIVE VESSEL TRACKING"
+              color="#22d3ee"
+            />
 
-      <div style={{ padding: '1.2rem', background: 'rgba(34, 197, 94, 0.08)', borderRadius: '12px', border: '1px solid rgba(34, 197, 94, 0.1)', display: 'flex', alignItems: 'center' }}>
-        <div style={{ background: '#22c55e', padding: '10px', borderRadius: '8px', marginRight: '1rem' }}>
-          <Activity size={24} color="#020617"/>
-        </div>
-        <div>
-          <p style={{ fontSize: '0.6rem', color: '#94a3b8', fontWeight: 'bold', marginBottom: '4px' }}>SEISMIC MAGNITUDE</p>
-          <p className="mono" style={{ fontSize: '1.8rem', fontWeight: 'bold', color: '#22c55e' }}>{maxMag.toFixed(1)} M</p>
-        </div>
-      </div>
+            <AnalyticCell 
+              icon={<Rocket size={20} />} 
+              label="SATELLITE / ISS NODE" 
+              value={satellites.length + (iss ? 1 : 0)} 
+              subText="FLIGHT PATHS CALCULATED"
+              color="#a855f7"
+            />
 
-      <div style={{ marginTop: '0.5rem', padding: '1rem', borderTop: '1px solid rgba(255,255,255,0.1)', textAlign: 'center' }}>
-         <div className="mono" style={{ fontSize: '0.6rem', color: '#64748b', fontWeight: 'bold', letterSpacing: '1px' }}>{APP_NAME} V{APP_VERSION} // MASTER SYSTEMS</div>
+            <AnalyticCell 
+              icon={<Activity size={20} />} 
+              label="SEISMIC EVENT (QUAKE)" 
+              value={`${maxMag.toFixed(1)} M`} 
+              subText="STABILITY: NOMINAL"
+              color="#f59e0b"
+            />
+          </div>
+
+          <div style={{ marginTop: '12px', padding: '12px', borderTop: '1px solid rgba(255,255,255,0.05)', textAlign: 'center' }}>
+             <div style={{ fontSize: '0.55rem', color: 'rgba(255,255,255,0.2)', fontWeight: 'bold', letterSpacing: '2px', fontFamily: 'monospace' }}>
+               {APP_NAME} // V{APP_VERSION} 
+             </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AnalyticCell({ icon, label, value, subText, color }: any) {
+  return (
+    <div style={{ 
+      display: 'flex', 
+      alignItems: 'center', 
+      gap: '14px', 
+      padding: '14px', 
+      background: 'rgba(255,255,255,0.02)', 
+      borderRadius: '14px', 
+      border: '1px solid rgba(255,255,255,0.05)'
+    }}>
+      <div style={{ 
+        background: `${color}15`, 
+        padding: '10px', 
+        borderRadius: '10px', 
+        border: `1px solid ${color}30`,
+        color: color 
+      }}>
+        {icon}
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column' }}>
+        <div style={{ fontSize: '0.6rem', color: 'rgba(255,255,255,0.4)', fontWeight: 'bold', letterSpacing: '1px' }}>{label}</div>
+        <div style={{ color: '#fff', fontSize: '1.2rem', fontWeight: '900', fontFamily: 'Orbitron, sans-serif' }}>{value}</div>
+        <div style={{ fontSize: '0.55rem', color: 'rgba(255,255,255,0.2)', marginTop: '2px', fontFamily: 'monospace' }}>{subText}</div>
       </div>
     </div>
   );
 }
+

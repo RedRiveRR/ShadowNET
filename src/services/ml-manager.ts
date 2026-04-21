@@ -19,7 +19,10 @@ function generateId(): string {
  * Worker'ı başlat ve model yüklenmesini tetikle.
  */
 export function initMLWorker(): void {
-  if (worker) return;
+  if (worker) {
+    console.log('[ML] Mevcut worker sonlandırılıyor...');
+    terminateMLWorker();
+  }
 
   try {
     worker = new Worker(

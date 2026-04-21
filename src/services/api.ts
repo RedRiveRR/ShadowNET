@@ -5,10 +5,20 @@ import { initMLWorker, analyzeIntelSentiment } from './ml-manager';
 import { aisService } from './ais-service';
 import * as satellite from 'satellite.js';
 
+// === SYSTEM STATE ===
+let activeIntervals: number[] = [];
+let abortControllers: AbortController[] = [];
+
+function createSignal() {
+  const controller = new AbortController();
+  abortControllers.push(controller);
+  return controller.signal;
+}
+
 // === DEPREMLER ===
 export const fetchEarthquakes = async () => {
   try {
-    const response = await fetch('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_hour.geojson');
+    const response = await fetch('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_hour.geojson', { signal: createSignal() });
     const data = await response.json();
     if (data.features) {
       const quakes = data.features.map((f: any) => ({
@@ -17,7 +27,9 @@ export const fetchEarthquakes = async () => {
       }));
       useMetricsStore.getState().setEarthquakes(quakes);
     }
-  } catch (e) { console.error('Deprem Hatası:', e); }
+  } catch (e: any) { 
+    if (e.name !== 'AbortError') console.error('Deprem Hatası:', e); 
+  }
 };
 
 // === UÇUŞLAR (Universal Quad-Source Adapter) ===
@@ -34,7 +46,7 @@ export const fetchFlights = async (bounds?: { lamin: number; lomin: number; lama
       url += `?${params.toString()}`;
     }
 
-    const response = await fetch(url);
+    const response = await fetch(url, { signal: createSignal() });
     const data = await response.json();
     
     const activeSource = data._source || 'UNKNOWN';
@@ -97,26 +109,56 @@ export const fetchFlights = async (bounds?: { lamin: number; lomin: number; lama
     if (flights.length > 0) {
       useMetricsStore.getState().setFlights(flights);
     }
-  } catch (e) { 
-    console.error('Uçuş Hatası:', e);
+  } catch (e: any) { 
+    if (e.name !== 'AbortError') console.error('Uçuş Hatası:', e);
   }
 };
 
 // === UYDULAR ===
+const PREMIUM_NORAD_IDS = [
+  '25544', // ISS
+  '20580', // Hubble (HST)
+  '48274', // Tiangong (CSS)
+  '43013', // NOAA 20
+  '55500'  // O3b mPOWER
+];
+
 export const fetchSatellites = async () => {
   try {
-    const response = await fetch('/api/data/satellites');
-    if (!response.ok) return;
+    console.log('[System] Orbital Registry fetch initiated...');
+    const response = await fetch('/api/data/satellites', { signal: createSignal() });
+    if (!response.ok) {
+      console.warn('[System] Orbital Registry fetch failed:', response.status);
+      return;
+    }
     const data = await response.json();
+    console.log(`[System] Orbital Registry received: ${data.length} records.`);
+    
     if (Array.isArray(data) && data.length > 0) {
-      const sats: Satellite[] = data.map((s: any, i: number) => ({
-        id: `sat-${i}`, name: s.name, tle1: s.tle1, tle2: s.tle2
-      }));
+      const sats: Satellite[] = data.map((s: any, i: number) => {
+        const isPremium = PREMIUM_NORAD_IDS.includes(s.noradId);
+        let satrec = null;
+        try {
+          satrec = satellite.twoline2satrec(s.tle1, s.tle2);
+        } catch (e) {}
+
+        return {
+          id: `sat-${i}-${s.noradId || ''}`,
+          name: s.name,
+          tle1: s.tle1,
+          tle2: s.tle2,
+          noradId: s.noradId,
+          isPremium,
+          satrec
+        };
+      });
       useMetricsStore.getState().setSatellites(sats);
-      // İlk yükleme sonrası hemen pozisyon hesapla
+      console.log(`[System] ${sats.length} satellites (satrec-optimized) pushed to store.`);
       propagateSatellites();
     }
-  } catch (e) { console.error('Uydu Hatası:', e); }
+  } catch (e: any) { 
+    if (e.name !== 'AbortError') console.error('Uydu Hatası:', e); 
+  }
 };
 
 // === HABERLER (Keyword-Geocoding) ===
@@ -131,7 +173,7 @@ const COUNTRY_MAP: Record<string, {lat: number, lng: number}> = {
 
 export const fetchNews = async () => {
   try {
-    const response = await fetch('/api/data/news');
+    const response = await fetch('/api/data/news', { signal: createSignal() });
     if (!response.ok) return;
     const data = await response.json();
     if (Array.isArray(data) && data.length > 0) {
@@ -157,7 +199,7 @@ export const fetchNews = async () => {
 // === TOR DÜĞÜMLERİ ===
 export const fetchTorNodes = async () => {
   try {
-    const response = await fetch('/api/data/tor');
+    const response = await fetch('/api/data/tor', { signal: createSignal() });
     if (!response.ok) return;
     const data = await response.json();
     if (Array.isArray(data) && data.length > 0) {
@@ -175,7 +217,7 @@ export const fetchTorNodes = async () => {
 // === ISS ===
 export const fetchISS = async () => {
   try {
-    const res = await fetch('https://api.wheretheiss.at/v1/satellites/25544');
+    const res = await fetch('https://api.wheretheiss.at/v1/satellites/25544', { signal: createSignal() });
     const data = await res.json();
     useMetricsStore.getState().setISS({ lat: data.latitude, lng: data.longitude, velocity: data.velocity, altitude: data.altitude });
   } catch (e) {}
@@ -183,51 +225,63 @@ export const fetchISS = async () => {
 
 // === UYDU YÖRÜNGE MOTORU (90dk Path) ===
 export const propagateSatellites = () => {
-  const { satellites, setSatellites } = useMetricsStore.getState();
-  if (!satellites.length) return;
-  const now = new Date();
-  const updated = satellites.map(s => {
-    try {
-      if (!s.tle1 || !s.tle2) return s;
-      const satrec = satellite.twoline2satrec(s.tle1, s.tle2);
-      
-      // Mevcut konum
-      const posVel = satellite.propagate(satrec, now);
-      if (!posVel.position || typeof posVel.position === 'boolean') return s;
-      const gmst = satellite.gstime(now);
-      const posGd = satellite.eciToGeodetic(posVel.position as satellite.EciVec3<number>, gmst);
-      
-      // 90 dakikalık yörünge yolu (Orbit Path) - 15 nokta
-      const path = [];
-      for (let i = 0; i < 90; i += 6) {
-        const futureTime = new Date(now.getTime() + i * 60000);
-        const fPosVel = satellite.propagate(satrec, futureTime);
-        if (fPosVel.position && typeof fPosVel.position !== 'boolean') {
-          const fGmst = satellite.gstime(futureTime);
-          const fPosGd = satellite.eciToGeodetic(fPosVel.position as satellite.EciVec3<number>, fGmst);
-          path.push({
-            lat: satellite.degreesLat(fPosGd.latitude),
-            lng: satellite.degreesLong(fPosGd.longitude)
-          });
-        }
-      }
+    const { satellites, setSatellites, selectedSatellite } = useMetricsStore.getState();
+    if (!satellites?.length) return;
+    const now = new Date();
+    const gmst = satellite.gstime(now);
 
-      return { 
-        ...s, 
-        lat: satellite.degreesLat(posGd.latitude), 
-        lng: satellite.degreesLong(posGd.longitude), 
-        alt: posGd.height / 6371,
-        path 
-      };
-    } catch (e) { return s; }
-  });
-  setSatellites(updated);
-};
+    const updated = satellites.map(s => {
+      // Satrec cache usage
+      if (!s.satrec) {
+        try { s.satrec = satellite.twoline2satrec(s.tle1, s.tle2); } catch (e) { return s; }
+      }
+      
+      try {
+        const posVel = satellite.propagate(s.satrec, now);
+        if (!posVel.position || typeof posVel.position === 'boolean') return s;
+        
+        const posGd = satellite.eciToGeodetic(posVel.position as any, gmst);
+        const isPriority = s.isPremium || s.id === selectedSatellite?.id;
+  
+        const velocityVec = posVel.velocity ? { 
+          x: (posVel.velocity as any).x, 
+          y: (posVel.velocity as any).y, 
+          z: (posVel.velocity as any).z 
+        } : undefined;
+  
+        let path = undefined;
+        if (isPriority) {
+          path = [];
+          for (let i = 0; i < 95; i += 5) {
+            const t = new Date(now.getTime() + i * 60000);
+            const pV = satellite.propagate(s.satrec, t);
+            if (pV.position && typeof pV.position !== 'boolean') {
+              const pG = satellite.eciToGeodetic(pV.position as any, satellite.gstime(t));
+              path.push({
+                lat: satellite.degreesLat(pG.latitude),
+                lng: satellite.degreesLong(pG.longitude)
+              });
+            }
+          }
+        }
+    
+        return { 
+          ...s, 
+          lat: satellite.degreesLat(posGd.latitude), 
+          lng: satellite.degreesLong(posGd.longitude), 
+          alt: posGd.height / 6371,
+          velocityVec,
+          path 
+        };
+      } catch (e) { return s; }
+    });
+    setSatellites(updated);
+  };
 
 // === SİBER GÜVENLİK (NVD CVE) ===
 export const fetchNVD = async () => {
   try {
-    const res = await fetch('https://services.nvd.nist.gov/rest/json/cves/2.0?resultsPerPage=3');
+    const res = await fetch('https://services.nvd.nist.gov/rest/json/cves/2.0?resultsPerPage=3', { signal: createSignal() });
     if (res.ok) {
       const data = await res.json();
       if (data.vulnerabilities && data.vulnerabilities.length > 0) {
@@ -247,7 +301,7 @@ export const fetchNVD = async () => {
 // === ALIENVAULT OTX (Proxy üzerinden) ===
 export const fetchOTX = async () => {
   try {
-    const response = await fetch('/api/data/otx');
+    const response = await fetch('/api/data/otx', { signal: createSignal() });
     if (response.ok) {
       const data = await response.json();
       if (data.results && data.results.length > 0) {
@@ -269,7 +323,7 @@ export const fetchOTX = async () => {
 // === CLOUDFLARE RADAR (Proxy üzerinden) ===
 export const fetchRadar = async () => {
   try {
-    const response = await fetch('/api/data/radar');
+    const response = await fetch('/api/data/radar', { signal: createSignal() });
     if (response.ok) {
       const data = await response.json();
       if (data.result && data.result.top_0 && data.result.top_0.length > 0) {
@@ -313,7 +367,7 @@ export const connectCryptoWebSocket = () => {
 // === GDELT İSTİHBARAT VERİSİ ===
 export const fetchIntelEvents = async () => {
   try {
-    const response = await fetch('/api/data/intel');
+    const response = await fetch('/api/data/intel', { signal: createSignal() });
     if (response.ok) {
       const data = await response.json();
       const articleMap = new Map<string, IntelArticle>();
@@ -411,11 +465,15 @@ export const fetchIntelEvents = async () => {
 };
 
 // === SİSTEM KONTROL VE REBOOT ===
-let activeIntervals: number[] = [];
-
 export const stopDataStreams = () => {
+  // Clear Intervals
   activeIntervals.forEach(clearInterval);
   activeIntervals = [];
+
+  // Abort Network Requests
+  abortControllers.forEach(c => c.abort());
+  abortControllers = [];
+
   aisService.stop();
   if (binanceWs) {
     binanceWs.close();

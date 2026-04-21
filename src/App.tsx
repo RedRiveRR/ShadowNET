@@ -13,7 +13,8 @@ import MaritimeMap2D from './components/MaritimeMap2D';
 import './App.css';
 function App() {
   const isStarted = useRef(false);
-  const { activeView, setActiveView } = useMetricsStore();
+  const activeView = useMetricsStore(state => state.activeView);
+  const setActiveView = useMetricsStore(state => state.setActiveView);
 
   useEffect(() => {
     if (!isStarted.current) {

@@ -78,21 +78,43 @@ const shadowProxyPlugin = () => ({
       if (!caches.flights.global || now - caches.flights.global.lastFetch > GLOBAL_TTL) {
         let success = false;
         const token = await getOpenSkyToken();
+        
+        // MASTER HUB PROVIDERS
         const providers = [
-          { name: 'OPENSKY', url: 'https://opensky-network.org/api/states/all', auth: true },
-          { name: 'AIRPLANES', url: 'https://api.airplanes.live/v2/all', auth: false },
-          { name: 'ADSB.ONE', url: 'https://api.adsb.one/v2/all', auth: false }
+          { name: 'OPENSKY', url: 'https://opensky-network.org/api/states/all', type: 'GLOBAL', auth: true },
+          { name: 'ADSB.LOL', url: 'https://api.adsb.lol/v2', type: 'REGIONAL', auth: false },
+          { name: 'AIRPLANES', url: 'https://api.airplanes.live/v2', type: 'REGIONAL', auth: false },
+          { name: 'ADSB.ONE', url: 'https://api.adsb.one/v2', type: 'REGIONAL', auth: false }
         ];
 
         for (const p of providers) {
-          if (apiCooldowns[p.name] && now - apiCooldowns[p.name] < 300 * 1000) continue;
+          if (apiCooldowns[p.name] && now - apiCooldowns[p.name] < 120 * 1000) continue;
 
           try {
-            console.log(`[MasterHub] Fetching NEW Global State from ${p.name}...`);
-            const headers: any = { 'User-Agent': 'Mozilla/5.0 ShadowNet/9.0 MasterHub' };
+            let finalUrl = p.url;
+            if (p.type === 'REGIONAL') {
+              // Eğer bölgesel bir provider ise ve istekte koordinat varsa point query yap
+              // Yoksa (Global haritadaysa) bu provider'ı atla (all desteklemiyorlar)
+              if (lamin && lomin && lamax && lomax) {
+                const midLat = (parseFloat(lamin) + parseFloat(lamax)) / 2;
+                const midLng = (parseFloat(lomin) + parseFloat(lomax)) / 2;
+                finalUrl += `/point/${midLat.toFixed(4)}/${midLng.toFixed(4)}/250`;
+              } else {
+                continue; 
+              }
+            } else {
+              finalUrl = p.url; // OpenSky all
+            }
+
+            console.log(`[MasterHub] Fetching NEW State from ${p.name} -> ${finalUrl}`);
+            const headers: any = { 'User-Agent': 'Mozilla/5.0 ShadowNet/11.0 MasterHub' };
             if (p.auth && token) headers['Authorization'] = `Bearer ${token}`;
 
-            const response = await fetch(p.url, { headers });
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 10000);
+            const response = await fetch(finalUrl, { headers, signal: controller.signal });
+            clearTimeout(timeoutId);
+
             if (response.ok) {
               const rawData = (await response.json()) as any;
               const credits = response.headers.get('X-Rate-Limit-Remaining');
@@ -103,13 +125,17 @@ const shadowProxyPlugin = () => ({
               };
               success = true;
               delete apiCooldowns[p.name];
+              console.log(`[MasterHub] Success! Source: ${p.name}`);
               break;
-            } else { apiCooldowns[p.name] = now; }
-          } catch (e) { apiCooldowns[p.name] = now; }
+            } else { 
+              apiCooldowns[p.name] = now; 
+            }
+          } catch (e: any) { 
+            apiCooldowns[p.name] = now; 
+          }
         }
 
         if (!success && !caches.flights.global) {
-          // Hiç veri yoksa boş bir global cache oluştur
           caches.flights.global = { data: { ac: [], _simulated: true, _source: 'SIMULATED' }, lastFetch: now };
         }
       }
@@ -144,28 +170,54 @@ const shadowProxyPlugin = () => ({
       res.end(JSON.stringify(responseData));
     });
 
-    // 2. Uydular (CelesTrak TLE satırları - Uzay İstasyonları grubu)
+    // 2. Uydular (CelesTrak TLE - Genişletilmiş Multi-Grup)
     server.middlewares.use('/api/data/satellites', async (_req: any, res: any) => {
       const now = Date.now();
-      if (now - caches.satellites.lastFetch > 3600000) {
+      // Cache süresi: 6 Saat (TLE verileri sık değişmez)
+      if (now - caches.satellites.lastFetch > 3600000 * 6) {
         try {
-          // TLE formatında çekiyoruz (3 satırlık klasik TLE)
-          const response = await fetch('https://celestrak.org/NORAD/elements/gp.php?GROUP=stations&FORMAT=tle');
-          if (response.ok) {
-            const text = await response.text();
-            const lines = text.trim().split('\n').map((l: string) => l.trim());
-            const sats: any[] = [];
-            for (let i = 0; i < lines.length - 2; i += 3) {
-              sats.push({
-                name: lines[i],
-                tle1: lines[i + 1],
-                tle2: lines[i + 2]
-              });
+          console.log('[Proxy] Starting Heavy Orbital Scan (Multi-Source)...');
+          const groups = ['visual', 'science', 'weather', 'stations', 'iridium', 'gps-ops'];
+          let combinedLines: string[] = [];
+          
+          for (const group of groups) {
+            try {
+              const resp = await fetch(`https://celestrak.org/NORAD/elements/gp.php?GROUP=${group}&FORMAT=tle`);
+              if (resp.ok) {
+                const text = await resp.text();
+                const groupLines = text.trim().split('\n').map(l => l.trim()).filter(l => l.length > 0);
+                combinedLines = combinedLines.concat(groupLines);
+                console.log(`[Proxy] Group [${group}] ingested: ${groupLines.length / 3} sats.`);
+              }
+            } catch (err) {
+              console.warn(`[Proxy] Group [${group}] fetch failed, skipping.`);
             }
-            caches.satellites.data = sats;
-            caches.satellites.lastFetch = now;
           }
-        } catch (e) { console.error('[Proxy] Satellite Error:', e); }
+          
+          const satsMap = new Map();
+          for (let i = 0; i < combinedLines.length - 2; i += 3) {
+            const name = combinedLines[i];
+            const t1 = combinedLines[i+1];
+            const t2 = combinedLines[i+2];
+
+            // TLE Alignment Check: Line 1 starts with '1 ', Line 2 starts with '2 '
+            if (t1.startsWith('1 ') && t2.startsWith('2 ')) {
+              const noradId = t2.substring(2, 7).trim();
+              if (!satsMap.has(noradId)) {
+                satsMap.set(noradId, { name, tle1: t1, tle2: t2, noradId });
+              }
+            } else {
+              // Misalignment detected, shift index to try to realign
+              i -= 2; 
+            }
+          }
+          
+          caches.satellites.data = Array.from(satsMap.values());
+          caches.satellites.lastFetch = now;
+          console.log(`[Proxy] Global Orbit Registry Ready: ${caches.satellites.data.length} targets tracked.`);
+        } catch (e) { 
+          console.error('[Proxy] Severe Orbital Data Corruption:', e); 
+        }
       }
       res.setHeader('Content-Type', 'application/json');
       res.end(JSON.stringify(caches.satellites.data));
@@ -406,7 +458,7 @@ const shadowProxyPlugin = () => ({
                     });
                 });
 
-                upstream.on('close', (code: number, reason: string) => {
+                upstream.on('close', (code: number) => {
                     console.warn(`[AIS] Upstream closed (${code}). Reconnecting in 15s...`);
                     AIS.upstream = null;
                     AIS.connecting = false;
