@@ -14,7 +14,7 @@ const server = http.createServer(app);
 
 // --- Hybrid Support: CORS ---
 app.use(cors({
-  origin: '*', // Vercel ve diğer her yerden erişime izin veriyoruz
+  origin: '*', 
   methods: ['GET', 'POST'],
   credentials: true
 }));
@@ -25,15 +25,6 @@ app.use(express.json());
 app.use((req, res, next) => {
   console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
   next();
-});
-
-app.get('/api/status', (req, res) => {
-  res.json({ 
-    status: 'online', 
-    uptime: process.uptime(),
-    timestamp: new Date().toISOString(),
-    mode: 'Hybrid Backend (Render)'
-  });
 });
 
 const caches = {
@@ -67,75 +58,112 @@ async function getOpenSkyToken() {
   return null;
 }
 
-// --- Minimalist Data Proxies ---
-app.get('/api/data/flights', async (req, res) => {
-  const now = Date.now();
-  if (!caches.flights.data || now - caches.flights.lastFetch > 60000) {
-    const token = await getOpenSkyToken();
-    const providers = [
-      { name: 'ADSB.LOL', url: 'https://api.adsb.lol/v2/LATEST' },
-      { name: 'OPENSKY', url: 'https://opensky-network.org/api/states/all', auth: true }
-    ];
-    for (const p of providers) {
-      try {
-        const headers = { 'User-Agent': 'Mozilla/5.0' };
-        if (p.auth && token) headers['Authorization'] = `Bearer ${token}`;
-        const response = await fetch(p.url, { headers });
-        if (response.ok) {
-          const rawData = await response.json();
-          caches.flights.data = { ...rawData, _source: p.name };
-          caches.flights.lastFetch = now;
-          break;
-        }
-      } catch (e) {}
-    }
-  }
-  res.json(caches.flights.data || { ac: [], _loading: true });
-});
+// --- Background Data Collectors (Memory Optimized) ---
+async function syncFlights() {
+  const token = await getOpenSkyToken();
+  const providers = [
+    { name: 'ADSB.LOL', url: 'https://api.adsb.lol/v2/LATEST' },
+    { name: 'ADSB.FI', url: 'https://api.adsb.fi/v2/all' },
+    { name: 'OPENSKY', url: 'https://opensky-network.org/api/states/all', auth: true }
+  ];
 
-app.get('/api/data/satellites', async (req, res) => {
-  const now = Date.now();
-  if (caches.satellites.data.length === 0 || now - caches.satellites.lastFetch > 3600000) {
+  for (const p of providers) {
     try {
-      const response = await fetch('https://celestrak.org/NORAD/elements/gp.php?GROUP=active&FORMAT=tle');
+      const headers = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebkit/537.36' };
+      if (p.auth && token) headers['Authorization'] = `Bearer ${token}`;
+      
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000);
+      const response = await fetch(p.url, { headers, signal: controller.signal });
+      clearTimeout(timeoutId);
+
+      if (response.ok) {
+        const rawData = await response.json();
+        caches.flights.data = { ...rawData, _source: p.name };
+        caches.flights.lastFetch = Date.now();
+        console.log(`[Sync] Flights refreshed via ${p.name}`);
+        return true;
+      }
+    } catch (e) {}
+  }
+  return false;
+}
+
+async function syncSatellites() {
+  const groups = ['starlink', 'gps-ops', 'stations', 'visual'];
+  let allSats = [];
+  for (const group of groups) {
+    try {
+      const response = await fetch(`https://celestrak.org/NORAD/elements/gp.php?GROUP=${group}&FORMAT=tle`);
       if (response.ok) {
         const text = await response.text();
         const lines = text.trim().split('\n').map(l => l.trim());
-        const sats = [];
         for (let i = 0; i < lines.length - 2; i += 3) {
-          sats.push({ name: lines[i], tle1: lines[i + 1], tle2: lines[i + 2] });
+          allSats.push({ name: lines[i], tle1: lines[i + 1], tle2: lines[i + 2], group });
         }
-        caches.satellites.data = sats; caches.satellites.lastFetch = now;
       }
     } catch (e) {}
   }
-  res.json(caches.satellites.data);
-});
-
-app.get('/api/data/intel', async (req, res) => {
-  const now = Date.now();
-  if (caches.intel.data.topics.length === 0 || now - caches.intel.lastFetch > 900000) {
-    try {
-      const query = '(military OR nuclear OR cyber OR conflict OR sanctions) sourcelang:eng';
-      const url = `https://api.gdeltproject.org/api/v2/doc/doc?query=${encodeURIComponent(query)}&mode=artlist&maxrecords=50&format=json&sort=date`;
-      const response = await fetch(url);
-      if (response.ok) {
-        const data = await response.json();
-        caches.intel.data = { topics: [{ id: 'global', articles: data.articles || [] }] };
-        caches.intel.lastFetch = now;
-      }
-    } catch (e) {}
+  if (allSats.length > 0) {
+    caches.satellites.data = allSats;
+    caches.satellites.lastFetch = Date.now();
+    console.log(`[Sync] Satellites refreshed: ${allSats.length}`);
   }
-  res.json(caches.intel.data);
+}
+
+async function syncIntel() {
+  try {
+    const query = '(military OR nuclear OR cyber OR conflict OR sanctions) sourcelang:eng';
+    const url = `https://api.gdeltproject.org/api/v2/doc/doc?query=${encodeURIComponent(query)}&mode=artlist&maxrecords=100&format=json&sort=date`;
+    const response = await fetch(url);
+    if (response.ok) {
+      const data = await response.json();
+      caches.intel.data = { topics: [{ id: 'global', articles: data.articles || [] }] };
+      caches.intel.lastFetch = Date.now();
+      console.log(`[Sync] Intel refreshed: ${data.articles?.length || 0} articles`);
+    }
+  } catch (e) {}
+}
+
+async function syncExtra() {
+  // Tor Onionoo
+  try {
+    const res = await fetch('https://onionoo.torproject.org/details?type=relay&running=true&limit=20');
+    if (res.ok) {
+      const data = await res.json();
+      caches.tor.data = (data.relays || []).filter(r => r.latitude && r.longitude);
+    }
+  } catch (e) {}
+  // News NYT
+  try {
+    const res = await fetch('https://api.rss2json.com/v1/api.json?rss_url=https://rss.nytimes.com/services/xml/rss/nyt/World.xml');
+    if (res.ok) {
+      const data = await res.json();
+      caches.news.data = (data.items || []).map(item => ({ title: item.title, url: item.link }));
+    }
+  } catch (e) {}
+}
+
+// Initial Sync & Loops
+setInterval(syncFlights, 120000);
+setInterval(syncSatellites, 3600000);
+setInterval(syncIntel, 900000);
+setInterval(syncExtra, 600000);
+setTimeout(() => { syncFlights(); syncSatellites(); syncIntel(); syncExtra(); }, 1000);
+
+// --- API Endpoints ---
+app.get('/api/status', (req, res) => {
+  res.json({ status: 'online', uptime: process.uptime(), providers: ['OPENSKY', 'ADSB.LOL', 'ADSB.FI'] });
 });
 
-app.get('/api/data/tor', async (req, res) => {
-  res.json([]); // Simplified for now
+app.get('/api/data/flights', (req, res) => {
+  res.json(caches.flights.data || { ac: [], _loading: true });
 });
 
-app.get('/api/data/news', async (req, res) => {
-  res.json([]); // Simplified for now
-});
+app.get('/api/data/satellites', (req, res) => res.json(caches.satellites.data));
+app.get('/api/data/intel', (req, res) => res.json(caches.intel.data));
+app.get('/api/data/tor', (req, res) => res.json(caches.tor.data));
+app.get('/api/data/news', (req, res) => res.json(caches.news.data));
 
 // --- AIS WebSocket Relay ---
 const AIS = { upstream: null, clients: new Set() };
@@ -157,9 +185,10 @@ const connectUpstream = () => {
     });
     upstream.on('close', () => { AIS.upstream = null; setTimeout(connectUpstream, 10000); });
     
-    setInterval(() => {
+    const hb = setInterval(() => {
       if (upstream.readyState === 1) upstream.send(JSON.stringify({ type: 'ping' }));
     }, 30000);
+    upstream.on('close', () => clearInterval(hb));
 
   } catch (e) { setTimeout(connectUpstream, 10000); }
 };
@@ -178,19 +207,8 @@ server.on('upgrade', (req, socket, head) => {
 });
 connectUpstream();
 
-// --- Static Backup ---
-// --- Pure Data Center Mode ---
 app.get('/', (req, res) => {
-  res.json({ 
-    status: 'online', 
-    service: 'ShadowNet Global Data Center',
-    version: '11.2',
-    uptime: process.uptime()
-  });
-});
-
-app.use((req, res) => {
-  res.status(404).json({ error: 'Endpoint Not Found', url: req.url });
+  res.send('ShadowNet Data Center Online. Point Vercel here.');
 });
 
 const PORT = process.env.PORT || 8080;
