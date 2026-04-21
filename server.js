@@ -35,6 +35,20 @@ const caches = {
   intel: { data: { topics: [] }, lastFetch: 0 }
 };
 
+// --- Robust Fetch Utility ---
+async function fetchWithTimeout(url, options = {}, timeout = 15000) {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeout);
+  try {
+    const response = await fetch(url, { ...options, signal: controller.signal });
+    clearTimeout(id);
+    return response;
+  } catch (e) {
+    clearTimeout(id);
+    throw e;
+  }
+}
+
 let openskyToken = { value: '', expires: 0 };
 async function getOpenSkyToken() {
   const now = Date.now();
@@ -44,11 +58,11 @@ async function getOpenSkyToken() {
     params.append('grant_type', 'client_credentials');
     params.append('client_id', process.env.OPENSKY_CLIENT_ID || '');
     params.append('client_secret', process.env.OPENSKY_CLIENT_SECRET || '');
-    const response = await fetch('https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token', {
+    const response = await fetchWithTimeout('https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: params
-    });
+    }, 10000);
     if (response.ok) {
       const data = await response.json();
       openskyToken = { value: data.access_token, expires: now + (data.expires_in * 1000) };
@@ -74,7 +88,7 @@ async function syncFlights() {
       const headers = { 'User-Agent': 'Mozilla/5.0' };
       if (p.auth && token) headers['Authorization'] = `Bearer ${token}`;
       
-      const response = await fetch(p.url, { headers, timeout: 15000 });
+      const response = await fetchWithTimeout(p.url, { headers }, 15000);
       if (response.ok) {
         const rawData = await response.json();
         caches.flights.data = { ...rawData, _source: p.name, _report: report };
@@ -85,7 +99,7 @@ async function syncFlights() {
         report.push({ name: p.name, status: 'ERR' });
       }
     } catch (e) {
-      report.push({ name: p.name, status: 'ERR' });
+      report.push({ name: p.name, status: 'TIMEOUT/ERR' });
     }
   }
   return false;
@@ -128,13 +142,13 @@ async function syncIntel() {
   for (const topic of topics) {
     try {
       const url = `https://api.gdeltproject.org/api/v2/doc/doc?query=${encodeURIComponent(topic.query + ' sourcelang:eng')}&mode=artlist&maxrecords=20&format=json&sort=date`;
-      const response = await fetch(url);
+      const response = await fetchWithTimeout(url, {}, 10000);
       if (response.ok) {
         const data = await response.json();
         intelData.topics.push({ id: topic.id, articles: data.articles || [] });
       }
     } catch (e) {
-      console.error(`[Sync] Intel ${topic.id} failed`);
+      console.error(`[Sync] Intel ${topic.id} failed/timeout`);
     }
     // Rate limit safeguard
     await new Promise(r => setTimeout(r, 500));
@@ -167,12 +181,17 @@ async function syncExtra() {
   } catch (e) {}
 }
 
-// Initial Sync & Loops
+// Initial Sync & Loops (Parallel Initial Load)
 setInterval(syncFlights, 120000);
 setInterval(syncSatellites, 3600000);
 setInterval(syncIntel, 900000);
 setInterval(syncExtra, 600000);
-setTimeout(() => { syncFlights(); syncSatellites(); syncIntel(); syncExtra(); }, 1000);
+
+// Parallelizing initial loads so one slow fetch doesn't block others
+setTimeout(syncFlights, 500);
+setTimeout(syncSatellites, 1000);
+setTimeout(syncIntel, 1500);
+setTimeout(syncExtra, 2000);
 
 // --- API Endpoints ---
 app.get('/api/status', (req, res) => {
