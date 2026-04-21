@@ -60,52 +60,8 @@ export default function RadarMap2D() {
       .then(data => setGeoData(data))
       .catch(err => console.error("GeoJSON Map Error:", err));
 
-    // 2. Otonom Haber & Tehdit Algılayıcı Ağ (BBC World RSS AI)
-    const fetchNews = async () => {
-      const fallbackConflicts: Record<string, ConflictInfo> = {
-        'UKR': { iso: 'UKR', countryName: 'UKRAINE', news: [{ title: 'Active War Zone: Ukraine', desc: 'Ongoing high-intensity kinetic conflict and airspace restrictions.', link: '#', date: new Date().toISOString() }] },
-        'ISR': { iso: 'ISR', countryName: 'ISRAEL', news: [{ title: 'Active Combat Ops: Israel', desc: 'Military operations and restricted airspace over affected regions.', link: '#', date: new Date().toISOString() }] },
-        'LBN': { iso: 'LBN', countryName: 'LEBANON', news: [{ title: 'Border Hostilities', desc: 'Active security alerts and skirmishes.', link: '#', date: new Date().toISOString() }] },
-        'PSE': { iso: 'PSE', countryName: 'PALESTINE', news: [{ title: 'Gaza Crisis', desc: 'Ongoing conflict and severe humanitarian emergency.', link: '#', date: new Date().toISOString() }] },
-        'IRN': { iso: 'IRN', countryName: 'IRAN', news: [{ title: 'Regional Tensions', desc: 'Heightened military readiness and airspace monitoring.', link: '#', date: new Date().toISOString() }] },
-        'RUS': { iso: 'RUS', countryName: 'RUSSIA', news: [{ title: 'Restricted Airspace', desc: 'Western flight bans and military operations.', link: '#', date: new Date().toISOString() }] },
-        'YEM': { iso: 'YEM', countryName: 'YEMEN', news: [{ title: 'Red Sea Hostilities', desc: 'Naval disruptions and drone activity.', link: '#', date: new Date().toISOString() }] },
-        'SDN': { iso: 'SDN', countryName: 'SUDAN', news: [{ title: 'Civil War', desc: 'Intense factional fighting and comprehensive airspace closure.', link: '#', date: new Date().toISOString() }] },
-        'SYR': { iso: 'SYR', countryName: 'SYRIA', news: [{ title: 'Active Conflict', desc: 'Multiple faction combat operations and unstable control.', link: '#', date: new Date().toISOString() }] }
-      };
-
-      try {
-        const rssUrl = "https://api.rss2json.com/v1/api.json?rss_url=https%3A%2F%2Ffeeds.bbci.co.uk%2Fnews%2Fworld%2Frss.xml";
-        const res = await fetch(rssUrl);
-        const data = await res.json();
-        
-        const activeMap = { ...fallbackConflicts };
-        
-        data.items?.forEach((item: any) => {
-          const text = (item.title + " " + item.description).toLowerCase();
-          const hasConflictKeyword = CONFLICT_KEYWORDS.some(kw => text.includes(kw));
-          
-          if (hasConflictKeyword) {
-            Object.entries(COUNTRY_TO_ISO).forEach(([country, iso]) => {
-              if (text.includes(country)) {
-                if (!activeMap[iso]) {
-                  activeMap[iso] = { iso, countryName: country.toUpperCase(), news: [] };
-                }
-                if (!activeMap[iso].news.find((n: any) => n.title === item.title)) {
-                  activeMap[iso].news.push({ title: item.title, desc: item.description, link: item.link, date: item.pubDate });
-                }
-              }
-            });
-          }
-        });
-        
-        setConflictData(activeMap);
-      } catch (err) {
-        console.error("RSS AI Scanner Error:", err);
-        setConflictData(fallbackConflicts);
-      }
-    };
-    fetchNews();
+    // 2. Otonom Haber & Tehdit Algılayıcı Ağ (ShadowNet Intel Integration)
+    // We now use the unified intelEvents from the store for categorized news
   }, []);
 
   // Canvas ve SVG Referansları
@@ -192,6 +148,10 @@ export default function RadarMap2D() {
       });
     }
   }, [dimensions, apiStatus]);
+
+  // === HYBRID CONFIG ===
+  // Dev mode uses proxy from vite.config.ts, Production uses the Render URL or relative if on the same domain
+  const RENDER_URL = import.meta.env.PROD ? 'https://shadownet-vwvw.onrender.com' : '';
 
   // === NATIVE PAN & ZOOM LİSTENERLARI ===
   const onPointerDown = (e: React.PointerEvent) => {
@@ -759,37 +719,34 @@ export default function RadarMap2D() {
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             {(() => {
-              const dataToShow = selectedConflict ? [selectedConflict] : Object.values(conflictData).filter(c => c.news.length > 0);
+              const intelEvents = useMetricsStore.getState().intelEvents || [];
               
-              if (dataToShow.length === 0) {
+              if (intelEvents.length === 0) {
                 return (
                   <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.5)', fontStyle: 'italic', padding: '10px', background: 'rgba(255,255,255,0.02)', borderRadius: '4px' }}>
-                    No live intercepts. Persisting baseline airspace restrictions.
+                    No live intercepts. Persisting baseline tactical awareness.
                   </div>
                 );
               }
 
-              return dataToShow.map(c => (
-                <div key={c.iso} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  {!selectedConflict && (
-                     <div style={{ fontSize: '0.7rem', color: '#ef4444', fontWeight: 'bold', fontFamily: 'monospace' }}>
-                       [{c.countryName}]
-                     </div>
-                  )}
-                  {c.news.map((item, idx) => (
+              // Group by category/topic
+              const categories = [...new Set(intelEvents.map(e => e.topicId))];
+
+              return categories.map(cat => (
+                <div key={cat} style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '16px' }}>
+                  <div style={{ fontSize: '0.7rem', color: '#ef4444', fontWeight: 'bold', fontFamily: 'monospace', textTransform: 'uppercase' }}>
+                    [{cat}]
+                  </div>
+                  {intelEvents.filter(e => e.topicId === cat).slice(0, 3).map((item, idx) => (
                     <div key={idx} style={{ background: 'rgba(255,255,255,0.03)', padding: '12px', borderRadius: '6px', borderLeft: '2px solid rgba(239,68,68,0.5)' }}>
-                      <a href={item.link} target="_blank" rel="noreferrer" style={{ fontSize: '0.85rem', color: '#e2e8f0', fontWeight: '600', textDecoration: 'none', display: 'block', marginBottom: '6px', lineHeight: '1.3' }}>
+                      <a href={item.url} target="_blank" rel="noreferrer" style={{ fontSize: '0.85rem', color: '#e2e8f0', fontWeight: '600', textDecoration: 'none', display: 'block', marginBottom: '6px', lineHeight: '1.3' }}>
                         {item.title}
                       </a>
-                      <p style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.6)', margin: 0, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', lineHeight: '1.4' }}>
-                        {item.desc}
-                      </p>
                       <div style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.4)', marginTop: '8px', fontFamily: 'monospace' }}>
-                         {new Date(item.date).toLocaleString()}
+                         {item.source} · {new Date(item.date).toLocaleTimeString()}
                       </div>
                     </div>
                   ))}
-                  {!selectedConflict && <div style={{ height: '1px', background: 'rgba(255,255,255,0.05)', marginTop: '4px' }} />}
                 </div>
               ));
             })()}

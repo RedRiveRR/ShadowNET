@@ -6,7 +6,8 @@ import { aisService } from './ais-service';
 import * as satellite from 'satellite.js';
 
 // === HYBRID CONFIG ===
-const RENDER_URL = 'https://shadownet-vwvw.onrender.com';
+// Dev mode uses proxy from vite.config.ts, Production uses the Render URL or relative if on the same domain
+const RENDER_URL = import.meta.env.PROD ? 'https://shadownet-vwvw.onrender.com' : '';
 
 // === DEPREMLER ===
 export const fetchEarthquakes = async () => {
@@ -230,17 +231,19 @@ export const propagateSatellites = () => {
 // === SİBER GÜVENLİK (NVD CVE) ===
 export const fetchNVD = async () => {
   try {
-    const res = await fetch('https://services.nvd.nist.gov/rest/json/cves/2.0?resultsPerPage=3');
+    const res = await fetch('https://services.nvd.nist.gov/rest/json/cves/2.0?resultsPerPage=10');
     if (res.ok) {
       const data = await res.json();
       if (data.vulnerabilities && data.vulnerabilities.length > 0) {
-        const cve = data.vulnerabilities[0].cve;
-        useMetricsStore.getState().addSecurityAlert({
-          id: cve.id + '-' + Date.now(),
-          type: 'CVE',
-          severity: cve.metrics?.cvssMetricV31?.[0]?.cvssData?.baseSeverity || 'HIGH',
-          title: `[CVE] ${cve.id}`,
-          time: Date.now()
+        data.vulnerabilities.forEach((v: any) => {
+          const cve = v.cve;
+          useMetricsStore.getState().addSecurityAlert({
+            id: cve.id + '-' + Date.now(),
+            type: 'CVE',
+            severity: cve.metrics?.cvssMetricV31?.[0]?.cvssData?.baseSeverity || 'HIGH',
+            title: `[CVE] ${cve.id}: ${cve.descriptions[0]?.value.slice(0, 60)}...`,
+            time: Date.now()
+          });
         });
       }
     }
@@ -341,11 +344,9 @@ export const fetchIntelEvents = async () => {
               const rawTitle = article.title || '';
               const rawUrl = article.url || '';
               
-              const cleanTitle = rawTitle.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 100);
-              const cleanUrl = rawUrl.toLowerCase().split('?')[0].replace(/\/$/, '');
-              
-              const uniqueKey = cleanUrl || cleanTitle;
-              if (!uniqueKey || articleMap.has(uniqueKey)) continue;
+              // Unique key to prevent duplicates across categories
+              const uniqueKey = (rawUrl || rawTitle).toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 150);
+              if (articleMap.has(uniqueKey)) continue;
 
               const GEO = {
                 'iran':[32.4279,53.688],'israel':[31.0461,34.8516],'gaza':[31.3268,34.3015],
@@ -362,9 +363,8 @@ export const fetchIntelEvents = async () => {
               };
               let finalLat, finalLng;
               const searchTitle = rawTitle.toLowerCase();
-              const searchUrl = cleanUrl;
+              const searchUrl = rawUrl.toLowerCase();
               for(const [k, v] of Object.entries(GEO)) {
-                // Word boundary check to avoid "house" matching "us"
                 const regex = new RegExp(`\\b${k}\\b`, 'i');
                 if(regex.test(searchTitle) || searchUrl.includes(k)) {
                   finalLat = v[0]; finalLng = v[1]; break;
@@ -372,12 +372,12 @@ export const fetchIntelEvents = async () => {
               }
 
               articleMap.set(uniqueKey, {
-                id: `intel-${btoa(encodeURIComponent(uniqueKey)).slice(0, 16)}`,
+                id: `intel-${topic.id}-${uniqueKey.slice(0, 12)}`,
                 topicId: topic.id,
                 title: rawTitle.trim(),
                 url: rawUrl,
-                source: article.source || '',
-                date: article.date || '',
+                source: article.source || 'GDELT Intelligence',
+                date: article.date || new Date().toISOString(),
                 tone: article.tone || 0,
                 ...(finalLat ? {lat: finalLat, lng: finalLng} : {})
               });

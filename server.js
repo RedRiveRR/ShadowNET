@@ -62,29 +62,31 @@ async function getOpenSkyToken() {
 async function syncFlights() {
   const token = await getOpenSkyToken();
   const providers = [
+    { name: 'OPENSKY', url: 'https://opensky-network.org/api/states/all', auth: true },
     { name: 'ADSB.LOL', url: 'https://api.adsb.lol/v2/LATEST' },
-    { name: 'ADSB.FI', url: 'https://api.adsb.fi/v2/all' },
-    { name: 'OPENSKY', url: 'https://opensky-network.org/api/states/all', auth: true }
+    { name: 'ADSB.FI', url: 'https://api.adsb.fi/v2/all' }
   ];
+
+  const report = [];
 
   for (const p of providers) {
     try {
-      const headers = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebkit/537.36' };
+      const headers = { 'User-Agent': 'Mozilla/5.0' };
       if (p.auth && token) headers['Authorization'] = `Bearer ${token}`;
       
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 15000);
-      const response = await fetch(p.url, { headers, signal: controller.signal });
-      clearTimeout(timeoutId);
-
+      const response = await fetch(p.url, { headers, timeout: 15000 });
       if (response.ok) {
         const rawData = await response.json();
-        caches.flights.data = { ...rawData, _source: p.name };
+        caches.flights.data = { ...rawData, _source: p.name, _report: report };
         caches.flights.lastFetch = Date.now();
         console.log(`[Sync] Flights refreshed via ${p.name}`);
         return true;
+      } else {
+        report.push({ name: p.name, status: 'ERR' });
       }
-    } catch (e) {}
+    } catch (e) {
+      report.push({ name: p.name, status: 'ERR' });
+    }
   }
   return false;
 }
@@ -112,17 +114,37 @@ async function syncSatellites() {
 }
 
 async function syncIntel() {
-  try {
-    const query = '(military OR nuclear OR cyber OR conflict OR sanctions) sourcelang:eng';
-    const url = `https://api.gdeltproject.org/api/v2/doc/doc?query=${encodeURIComponent(query)}&mode=artlist&maxrecords=100&format=json&sort=date`;
-    const response = await fetch(url);
-    if (response.ok) {
-      const data = await response.json();
-      caches.intel.data = { topics: [{ id: 'global', articles: data.articles || [] }] };
-      caches.intel.lastFetch = Date.now();
-      console.log(`[Sync] Intel refreshed: ${data.articles?.length || 0} articles`);
+  const topics = [
+    { id: 'cyber', query: 'cyberattack OR hacking OR ransomware OR databreach' },
+    { id: 'military', query: 'military OR army OR navy OR airforce OR deployment' },
+    { id: 'nuclear', query: 'nuclear OR uranium OR radiation OR reactor' },
+    { id: 'maritime', query: 'maritime OR shipping OR naval OR "red sea" OR blockade' },
+    { id: 'conflict', query: 'war OR combat OR strike OR explosion OR invasion' },
+    { id: 'diplomacy', query: 'sanctions OR treaty OR summit OR embassy' }
+  ];
+
+  let intelData = { topics: [] };
+
+  for (const topic of topics) {
+    try {
+      const url = `https://api.gdeltproject.org/api/v2/doc/doc?query=${encodeURIComponent(topic.query + ' sourcelang:eng')}&mode=artlist&maxrecords=20&format=json&sort=date`;
+      const response = await fetch(url);
+      if (response.ok) {
+        const data = await response.json();
+        intelData.topics.push({ id: topic.id, articles: data.articles || [] });
+      }
+    } catch (e) {
+      console.error(`[Sync] Intel ${topic.id} failed`);
     }
-  } catch (e) {}
+    // Rate limit safeguard
+    await new Promise(r => setTimeout(r, 500));
+  }
+
+  if (intelData.topics.length > 0) {
+    caches.intel.data = intelData;
+    caches.intel.lastFetch = Date.now();
+    console.log(`[Sync] Categorized Intel refreshed`);
+  }
 }
 
 async function syncExtra() {
@@ -134,7 +156,8 @@ async function syncExtra() {
       caches.tor.data = (data.relays || []).filter(r => r.latitude && r.longitude);
     }
   } catch (e) {}
-  // News NYT
+
+  // Global News (NYT)
   try {
     const res = await fetch('https://api.rss2json.com/v1/api.json?rss_url=https://rss.nytimes.com/services/xml/rss/nyt/World.xml');
     if (res.ok) {
@@ -164,6 +187,26 @@ app.get('/api/data/satellites', (req, res) => res.json(caches.satellites.data));
 app.get('/api/data/intel', (req, res) => res.json(caches.intel.data));
 app.get('/api/data/tor', (req, res) => res.json(caches.tor.data));
 app.get('/api/data/news', (req, res) => res.json(caches.news.data));
+
+app.get('/api/data/otx', async (req, res) => {
+  try {
+    const response = await fetch('https://otx.alienvault.com/api/v1/pulses/subscribed?limit=10', {
+      headers: { 'X-OTX-API-KEY': process.env.OTX_API_KEY || '' }
+    });
+    const data = await response.json();
+    res.json(data);
+  } catch (e) { res.status(500).json({ error: 'OTX failure' }); }
+});
+
+app.get('/api/data/radar', async (req, res) => {
+  try {
+    const response = await fetch('https://api.cloudflare.com/client/v4/radar/ranking/asn?limit=5', {
+      headers: { 'Authorization': `Bearer ${process.env.CF_API_TOKEN || ''}` }
+    });
+    const data = await response.json();
+    res.json(data);
+  } catch (e) { res.status(500).json({ error: 'Radar failure' }); }
+});
 
 // --- AIS WebSocket Relay ---
 const AIS = { upstream: null, clients: new Set() };
