@@ -75,20 +75,21 @@ async function getOpenSkyToken() {
 // --- Background Data Collectors (Memory Optimized) ---
 async function syncFlights() {
   const token = await getOpenSkyToken();
-  const providers = [
-    { name: 'OPENSKY', url: 'https://opensky-network.org/api/states/all', auth: true },
-    { name: 'ADSB.LOL', url: 'https://api.adsb.lol/v2/LATEST' },
-    { name: 'ADSB.FI', url: 'https://api.adsb.fi/v2/all' }
-  ];
-
   const report = [];
+
+  const providers = [
+    { name: 'OPENSKY', url: 'https://opensky-network.org/api/states/all', auth: true, timeout: 8000 },
+    { name: 'ADSB.LOL', url: 'https://api.adsb.lol/v2/lband/aircraft', timeout: 5000 },
+    { name: 'ADSB.FI', url: 'https://opendata.adsb.fi/api/v2/all', timeout: 5000 },
+    { name: 'ADSB.ONE', url: 'https://api.adsb.one/v2/all', timeout: 5000 }
+  ];
 
   for (const p of providers) {
     try {
       const headers = { 'User-Agent': 'Mozilla/5.0' };
       if (p.auth && token) headers['Authorization'] = `Bearer ${token}`;
       
-      const response = await fetchWithTimeout(p.url, { headers }, 15000);
+      const response = await fetchWithTimeout(p.url, { headers }, p.timeout);
       if (response.ok) {
         const rawData = await response.json();
         caches.flights.data = { ...rawData, _source: p.name, _report: report };
@@ -96,12 +97,13 @@ async function syncFlights() {
         console.log(`[Sync] Flights refreshed via ${p.name}`);
         return true;
       } else {
-        report.push({ name: p.name, status: 'ERR' });
+        report.push({ name: p.name, status: `HTTP ${response.status}` });
       }
     } catch (e) {
       report.push({ name: p.name, status: 'TIMEOUT/ERR' });
     }
   }
+  console.error(`[Sync] Flights failed: ${JSON.stringify(report)}`);
   return false;
 }
 
@@ -164,21 +166,24 @@ async function syncIntel() {
 async function syncExtra() {
   // Tor Onionoo
   try {
-    const res = await fetch('https://onionoo.torproject.org/details?type=relay&running=true&limit=20');
+    const res = await fetchWithTimeout('https://onionoo.torproject.org/details?type=relay&running=true&limit=20', {}, 10000);
     if (res.ok) {
       const data = await res.json();
-      caches.tor.data = (data.relays || []).filter(r => r.latitude && r.longitude);
+      const relays = (data.relays || []).filter(r => r.latitude && r.longitude);
+      caches.tor.data = relays;
+      if (relays.length > 0) console.log(`[Sync] Tor Nodes refreshed: ${relays.length}`);
     }
-  } catch (e) {}
+  } catch (e) { console.error('[Sync] Tor failed/timeout'); }
 
   // Global News (NYT)
   try {
-    const res = await fetch('https://api.rss2json.com/v1/api.json?rss_url=https://rss.nytimes.com/services/xml/rss/nyt/World.xml');
+    const res = await fetchWithTimeout('https://api.rss2json.com/v1/api.json?rss_url=https://rss.nytimes.com/services/xml/rss/nyt/World.xml', {}, 10000);
     if (res.ok) {
       const data = await res.json();
       caches.news.data = (data.items || []).map(item => ({ title: item.title, url: item.link }));
+      console.log(`[Sync] World News refreshed`);
     }
-  } catch (e) {}
+  } catch (e) { console.error('[Sync] News failed/timeout'); }
 }
 
 // Initial Sync & Loops (Parallel Initial Load)
@@ -198,14 +203,14 @@ app.get('/api/status', (req, res) => {
   res.json({ status: 'online', uptime: process.uptime(), providers: ['OPENSKY', 'ADSB.LOL', 'ADSB.FI'] });
 });
 
-app.get('/api/data/flights', (req, res) => {
+app.get(['/api/data/flights', '/api/flights'], (req, res) => {
   res.json(caches.flights.data || { ac: [], _loading: true });
 });
 
-app.get('/api/data/satellites', (req, res) => res.json(caches.satellites.data));
-app.get('/api/data/intel', (req, res) => res.json(caches.intel.data));
-app.get('/api/data/tor', (req, res) => res.json(caches.tor.data));
-app.get('/api/data/news', (req, res) => res.json(caches.news.data));
+app.get(['/api/data/satellites', '/api/satellites'], (req, res) => res.json(caches.satellites.data));
+app.get(['/api/data/intel', '/api/intel'], (req, res) => res.json(caches.intel.data));
+app.get(['/api/data/tor', '/api/tor', '/api/nodes'], (req, res) => res.json(caches.tor.data));
+app.get(['/api/data/news', '/api/news'], (req, res) => res.json(caches.news.data));
 
 app.get('/api/data/otx', async (req, res) => {
   try {
