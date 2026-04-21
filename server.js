@@ -179,17 +179,21 @@ server.on('upgrade', (req, socket, head) => {
 connectUpstream();
 
 // --- Static Backup ---
-const distPath = join(__dirname, 'dist');
-app.use(express.static(distPath));
-app.get('*', (req, res) => {
-  if (!req.url.startsWith('/api/')) {
-    res.sendFile(join(distPath, 'index.html'));
-  } else {
-    res.status(404).json({ error: 'Not Found' });
-  }
+// --- Pure Data Center Mode ---
+app.get('/', (req, res) => {
+  res.json({ 
+    status: 'online', 
+    service: 'ShadowNet Global Data Center',
+    version: '11.2',
+    uptime: process.uptime()
+  });
+});
+
+app.use((req, res) => {
+  res.status(404).json({ error: 'Endpoint Not Found', url: req.url });
 });
 
 const PORT = process.env.PORT || 8080;
 server.listen(PORT, () => {
-  console.log(`[ShadowNet Hybrid Backend] Listening on port ${PORT}`);
+  console.log(`[ShadowNet Data Center] Active on port ${PORT}`);
 });
