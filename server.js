@@ -78,10 +78,10 @@ async function syncFlights() {
   const report = [];
 
   const providers = [
-    { name: 'OPENSKY', url: 'https://opensky-network.org/api/states/all', auth: true, timeout: 8000 },
-    { name: 'ADSB.LOL', url: 'https://api.adsb.lol/v2/lband/aircraft', timeout: 5000 },
-    { name: 'ADSB.FI', url: 'https://opendata.adsb.fi/api/v2/all', timeout: 5000 },
-    { name: 'ADSB.ONE', url: 'https://api.adsb.one/v2/all', timeout: 5000 }
+    { name: 'OPENSKY', url: 'https://opensky-network.org/api/states/all', auth: true, timeout: 12000 },
+    { name: 'ADSB.LOL', url: 'https://api.adsb.lol/v2/all', timeout: 6000 },
+    { name: 'ADSB.ONE', url: 'https://api.adsb.one/v2/all', timeout: 6000 },
+    { name: 'ADSB.FI', url: 'https://opendata.adsb.fi/api/v2/all', timeout: 6000 }
   ];
 
   for (const p of providers) {
@@ -143,7 +143,7 @@ async function syncIntel() {
 
   for (const topic of topics) {
     try {
-      const url = `https://api.gdeltproject.org/api/v2/doc/doc?query=${encodeURIComponent(topic.query + ' sourcelang:eng')}&mode=artlist&maxrecords=20&format=json&sort=date`;
+      const url = `https://api.gdeltproject.org/api/v2/doc/doc?query=${encodeURIComponent(topic.query)}&mode=artlist&maxrecords=20&format=json&sort=date`;
       const response = await fetchWithTimeout(url, {}, 10000);
       if (response.ok) {
         const data = await response.json();
