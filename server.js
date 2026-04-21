@@ -79,9 +79,10 @@ async function syncFlights() {
 
   const providers = [
     { name: 'OPENSKY', url: 'https://opensky-network.org/api/states/all', auth: true, timeout: 12000 },
-    { name: 'ADSB.LOL', url: 'https://api.adsb.lol/v2/all', timeout: 6000 },
-    { name: 'ADSB.ONE', url: 'https://api.adsb.one/v2/all', timeout: 6000 },
-    { name: 'ADSB.FI', url: 'https://opendata.adsb.fi/api/v2/all', timeout: 6000 }
+    { name: 'AIRPLANES.LIVE', url: 'https://api.airplanes.live/v2/all', timeout: 7000 },
+    { name: 'ADSB.LOL', url: 'https://api.adsb.lol/v2/all', timeout: 7000 },
+    { name: 'ADSB.ONE', url: 'https://api.adsb.one/v2/all', timeout: 7000 },
+    { name: 'ADSB.FI (CYPRUS)', url: 'https://opendata.adsb.fi/api/v3/lat/35/lon/33/dist/250', timeout: 5000 }
   ];
 
   for (const p of providers) {
@@ -92,6 +93,7 @@ async function syncFlights() {
       const response = await fetchWithTimeout(p.url, { headers }, p.timeout);
       if (response.ok) {
         const rawData = await response.json();
+        // TheAirTraffic / Airplanes.live have same schema as ADSBExchange
         caches.flights.data = { ...rawData, _source: p.name, _report: report };
         caches.flights.lastFetch = Date.now();
         console.log(`[Sync] Flights refreshed via ${p.name}`);
