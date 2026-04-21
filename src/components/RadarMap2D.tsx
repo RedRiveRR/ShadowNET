@@ -3,14 +3,6 @@ import { useMetricsStore } from '../store/useMetricsStore';
 import { X, List } from 'lucide-react';
 
 // === OTONOM SİBER & İSTİHBARAT SÖZLÜĞÜ (AI RSS SCANNER) ===
-const CONFLICT_KEYWORDS = ["war", "strike", "attack", "conflict", "clash", "missile", "drone", "killed", "troops", "invasion", "military", "fire", "assassination", "bombbardment"];
-const COUNTRY_TO_ISO: Record<string, string> = {
-  "ukraine": "UKR", "russia": "RUS", "israel": "ISR", "lebanon": "LBN",
-  "palestine": "PSE", "gaza": "PSE", "iran": "IRN", "syria": "SYR",
-  "yemen": "YEM", "sudan": "SDN", "myanmar": "MMR", "taiwan": "TWN",
-  "somalia": "SOM", "haiti": "HTI", "mali": "MLI"
-};
-
 interface ConflictInfo {
   iso: string;
   countryName: string;
@@ -45,10 +37,7 @@ export default function RadarMap2D() {
   const [dimensions, setDimensions] = useState({ width: window.innerWidth, height: window.innerHeight });
   
   const [geoData, setGeoData] = useState<any>(null);
-  const [conflictData, setConflictData] = useState<Record<string, ConflictInfo>>({});
   const [selectedConflict, setSelectedConflict] = useState<ConflictInfo | null>(null);
-  
-  const conflictIsos = Object.keys(conflictData);
 
   // Dead Reckoning Motor Durumu
   const ghostMapRef = useRef(new Map<string, GhostFlight>());
@@ -148,10 +137,6 @@ export default function RadarMap2D() {
       });
     }
   }, [dimensions, apiStatus]);
-
-  // === HYBRID CONFIG ===
-  // Dev mode uses proxy from vite.config.ts, Production uses the Render URL or relative if on the same domain
-  const RENDER_URL = import.meta.env.PROD ? 'https://shadownet-vwvw.onrender.com' : '';
 
   // === NATIVE PAN & ZOOM LİSTENERLARI ===
   const onPointerDown = (e: React.PointerEvent) => {
@@ -569,27 +554,15 @@ export default function RadarMap2D() {
                 }
                 if (!d) return null;
 
-                const isConflict = conflictIsos.includes(feature.id);
-
                 return (
                   <path
                     key={`${feature.id}-${idx}`}
                     d={d}
-                    fill={isConflict ? "url(#hatchRed)" : "transparent"}
-                    stroke={isConflict ? "#ef4444" : "rgba(56, 189, 248, 0.4)"}
-                    strokeWidth={isConflict ? "1" : "0.5"}
-                    opacity={isConflict ? 0.9 : 0.6}
-                    style={{ pointerEvents: isConflict ? 'all' : 'none', cursor: isConflict ? 'crosshair' : 'default' }}
-                    onPointerDown={(e) => {
-                      if (isConflict) e.stopPropagation();
-                    }}
-                    onClick={(e) => {
-                      if (isConflict) {
-                        e.stopPropagation();
-                        setSelectedConflict(conflictData[feature.id]);
-                        setSelectedFlight(null);
-                      }
-                    }}
+                    fill="transparent"
+                    stroke="rgba(56, 189, 248, 0.4)"
+                    strokeWidth="0.5"
+                    opacity={0.6}
+                    style={{ pointerEvents: 'none', cursor: 'default' }}
                   />
                 );
               })}
