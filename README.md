@@ -1,58 +1,62 @@
-# 🌐 ShadowNet V11.0 — Global Maritime Recon & Hardened Intelligence
+# 🌐 ShadowNET V12.0 — Ultra-Global Recon & Tactical Intelligence
 
-ShadowNet, küresel güvenlik anomalilerini, jeopolitik çatışmaları ve stratejik varlıkları gerçek zamanlı olarak izleyen, hibrit AI ile güçlendirilmiş bir durumsal farkındalık terminalidir.
+ShadowNET is a high-fidelity situational awareness terminal designed to monitor global security anomalies, geopolitical conflicts, and strategic assets in real-time.
 
-V11.0 sürümüyle birlikte ShadowNet, mimarisini tamamen **Hardened Singleton** yapısına taşıyarak veri akışını sabitlemiş ve çoklu sekme desteği ile taktiksel veri derinliğini zirveye çıkarmıştır.
-
----
-
-## 🚀 V11.0 "Hardened Singleton" Yenilikleri
-
-### ⚓ 2D Maritime Radar (Optimized)
-Yüzlerce geminin anlık takibi için yeniden optimize edilmiş taktiksel radar katmanı:
-- **30 FPS Performance Throttle:** GPU yükünü %50 azaltan sabit FPS kontrolü ve gölgesiz (shadow-less) render motoru ile sıfır kasma.
-- **Active Signal Counter:** Radardaki canlı gemi sayısını anlık olarak HUD üzerinde gösteren telemetri sayacı.
-- **Bilingual Interface (EN/TR):** Kritik sistem ve veri kapsama uyarıları için tam Türkçe ve İngilizce desteği.
-- **V11 Singleton Relay:** Tüm tarayıcı sekmelerinin tek bir güvenli bağlantıyı paylaştığı, rate-limit (429) korumalı WebSocket mimarisi.
-
-### 🧠 Advanced AI & Intel Engine
-- **Quadruple Intel Volume:** GDELT üzerinden çekilen haber hacmi 4 katına çıkarıldı. Artık 250+ makale aynı anda işlenebilir.
-- **Genişletilmiş Kategoriler:** Finans, Enerji, Sınır Güvenliği ve İHA/SİHA (Drone/Missile) aktiviteleri için yeni takip keyword'leri eklendi.
-- **Bilingual Warnings:** Çatışma bölgelerindeki veri kısıtlamaları için dinamik ve belirgin çift dilli uyarı panelleri.
+V12.0 marks the transition to an **Ultra-Global Grid Architecture**, utilizing a Cloudflare Worker Relay to bypass systemic network restrictions and deliver unprecedented data density.
 
 ---
 
-## 🛠️ Teknik Mimari
+## 🚀 Key Features in V12.0
 
-1.  **Hardened Singleton Proxy:** GDELT, AIS Stream (WebSocket), OpenSky ve Tor verilerini tek bir kanal üzerinden yöneterek IP ban riskini minimize eder.
-2.  **ML Web Worker (Client-Side):** Yapay zeka hesaplamalarını (Duygu analizi ve kategorizasyon) ana arayüzü yormadan arka planda yönetir.
-3.  **Hybrid Visualization Engine:** 3D Globe (Küresel Tehditler) ve 2D Canvas Radar (Yerel Deniz Trafiği) arasında kesintisiz taktiksel geçiş.
+### ✈️ Ultra-Global Aviation Tracking
+- **12-Region Grid Chunker:** High-intensity scanning across 12 strategic global hubs (NA, EU, Asia, ME, etc.).
+- **11,000+ Active Aircraft:** Real-time global flight telemetry with 15,000 unit capacity.
+- **DPI/WAF Bypass:** Tunneled through a Cloudflare Worker Relay to reset JA3 fingerprints and bypass Azure IP blocks.
+
+### ⚓ Real-Time Maritime Recon
+- **Global AIS Stream:** Live ship tracking powered by AISStream.io.
+- **7,000+ Msg/Sync:** High-throughput maritime telemetry processing.
+- **Bounding Box Logic:** Worldwide coverage from pole to pole.
+
+### 🛰️ Orbital Surveillance
+- **Celestrak & AMSAT Hybrid:** Real-time satellite tracking for 500+ strategic orbital assets.
+- **Bypass Mode:** Relayed orbital data to ensure 24/7 uptime even during provider blocks.
+
+### 🧠 Tactical Intelligence Engine
+- **Rich Power Feed:** Merged stream of 300+ tactical news nodes (Military, Cyber, Nuclear, Space).
+- **Categorized Intel:** Advanced NLP classification for geopolitical events.
+- **Tor Infrastructure:** Real-time status monitoring for 200+ global Tor relays.
 
 ---
 
-## 🖥️ Kurulum
+## 🛠️ Technical Architecture
+
+1.  **Cloudflare Worker Relay:** Edge-based proxy layer to sanitize requests and handle high-volume data chunking.
+2.  **Multi-Region Merging:** Backend logic that deduplicates and merges regional telemetry into a unified global state.
+3.  **Hybrid Visualizer:** React + Globe.gl + Canvas rendering engine optimized for 15,000+ dynamic entities.
+
+---
+
+## 🖥️ Getting Started
 
 ```bash
-# Bağımlılıkları yükle
+# Install dependencies
 npm install
 
-# Geliştirme sunucusunu başlat
-npm run dev
-
-# Üretim sürümü için derle
-npm run build
+# Start the Shadow Engine
+node server.js
 ```
 
 ---
 
-## 🔐 Güvenlik ve Uyumluluk
+## 🔐 Security & Privacy
 
-- **Local AI Analysis:** ShadowNet AI bileşenleri hiçbir veriyi dış sunucuya göndermez. Analiz tamamen yerel tarayıcıda gerçekleşir.
-- **Strategic Data Notice:** Çatışma bölgeleri (Karadeniz, Kızıldeniz) için kısıtlama uyarıları arayüz düzeyinde şeffafça sunulur.
+- **Protected Origin:** Server IP and internal manifests are protected via `.gitignore` and Cloudflare masking.
+- **Zero External Analytics:** All intelligence analysis is performed locally; your reconnaissance data remains yours.
 
 ---
 
-> [!IMPORTANT]
-> **V11 Stability**: Bu sürüm, IP-tabanlı kısıtlamaları (429) aşmak için Singleton mimarisini zorunlu kılar. En iyi performans için tek bir sekme kullanılması önerilir.
+> [!NOTE]
+> **V12 Performance**: This version is designed for high-density displays. For optimal performance, ensure your hardware supports WebGL acceleration.
 
-**ShadowNet V11.0** — *Global Stability, Tactical Precision.*
+**ShadowNET V12.0** — *Global Presence, Tactical Superiority.*

@@ -180,6 +180,16 @@ interface MetricsState {
   selectedVessel: Vessel | null;
   setVessels: (vessels: Vessel[]) => void;
   setSelectedVessel: (vessel: Vessel | null) => void;
+  // V12.5 UI Visibility
+  uiVisibility: {
+    leftPanel: boolean;
+    rightPanel: boolean;
+    bottomDrawer: boolean;
+    legend: boolean;
+  };
+  isBottomDrawerOpen: boolean;
+  setBottomDrawerOpen: (open: boolean) => void;
+  setUIVisibility: (visibility: Partial<MetricsState['uiVisibility']>) => void;
   resetStore: () => void;
 }
 
@@ -269,6 +279,19 @@ export const useMetricsStore = create<MetricsState>((set) => ({
   setVessels: (vessels) => set({ vessels }),
   setSelectedVessel: (vessel) => set({ selectedVessel: vessel }),
 
+  // V12.5 UI Visibility (Default CLOSED)
+  uiVisibility: {
+    leftPanel: false,
+    rightPanel: false,
+    bottomDrawer: false,
+    legend: false,
+  },
+  isBottomDrawerOpen: false,
+  setBottomDrawerOpen: (open) => set({ isBottomDrawerOpen: open }),
+  setUIVisibility: (visibility) => set((state) => ({
+    uiVisibility: { ...state.uiVisibility, ...visibility }
+  })),
+
   resetStore: () => set({
     earthquakes: [],
     flights: [],
@@ -281,6 +304,8 @@ export const useMetricsStore = create<MetricsState>((set) => ({
     selectedFlight: null,
     selectedSatellite: null,
     selectedISS: false,
-    selectedVessel: null
+    selectedVessel: null,
+    isBottomDrawerOpen: false,
+    uiVisibility: { leftPanel: false, rightPanel: false, bottomDrawer: false, legend: false }
   }),
 }));

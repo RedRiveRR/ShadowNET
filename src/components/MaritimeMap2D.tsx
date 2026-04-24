@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react';
 import { useMetricsStore, type Vessel } from '../store/useMetricsStore';
-import { Ship, X, Anchor, Navigation, Activity } from 'lucide-react';
+import { Ship, X, Anchor, Navigation } from 'lucide-react';
 
 // === GHOST ENGINE INTERFACE ===
 interface GhostVessel extends Vessel {
@@ -33,6 +33,8 @@ export default function MaritimeMap2D() {
   const [geoData, setGeoData] = useState<any>(null);
   const [activeCount, setActiveCount] = useState(0);
 
+  const { uiVisibility } = useMetricsStore();
+
   // High-performance refs
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const mapGroupRef = useRef<SVGGElement>(null);
@@ -62,15 +64,42 @@ export default function MaritimeMap2D() {
     return geoData.features.map((f: any) => generatePath(f, dimensions.width, dimensions.height));
   }, [geoData, dimensions]);
 
+  const updateStoreBounds = () => {
+    const t = transformRef.current;
+    if (t.k < 2.5) {
+      useMetricsStore.getState().setApiStatus({ ...useMetricsStore.getState().apiStatus, currentBounds: null });
+    } else {
+      const w = dimensions.width;
+      const h = dimensions.height;
+      const getCoord = (sx: number, sy: number) => {
+        const lx = (sx - t.x) / t.k;
+        const ly = (sy - t.y) / t.k;
+        const lng = (lx / (w / 360)) - 180;
+        const lat = 90 - (ly / (h / 180));
+        return { lat, lng };
+      };
+      const topLeft = getCoord(0, 0);
+      const bottomRight = getCoord(w, h);
+      useMetricsStore.getState().setApiStatus({
+        ...useMetricsStore.getState().apiStatus,
+        currentBounds: {
+          lamin: Math.max(-90, bottomRight.lat),
+          lomin: Math.max(-180, topLeft.lng),
+          lamax: Math.min(90, topLeft.lat),
+          lomax: Math.min(180, bottomRight.lng)
+        }
+      });
+    }
+  };
+
   const clampTransform = () => {
     const t = transformRef.current;
     t.k = Math.max(1, Math.min(t.k, 150));
-    
-    // Projeksiyon sınırlarını koru (Dinamik Pivot Clamp)
     const minX = dimensions.width * (1 - t.k);
     const minY = dimensions.height * (1 - t.k);
     t.x = Math.max(minX, Math.min(0, t.x));
     t.y = Math.max(minY, Math.min(0, t.y));
+    updateStoreBounds();
   };
 
   // 3. Isolated Render Loop (30 FPS — optimized for performance)
@@ -321,57 +350,62 @@ export default function MaritimeMap2D() {
 
       <canvas ref={canvasRef} width={dimensions.width} height={dimensions.height} style={{ position: 'absolute', top: 0, left: 0 }} onClick={handleCanvasClick} />
 
-      {/* TACTICAL HUD */}
-      <div style={{ position: 'absolute', top: '80px', left: '24px', zIndex: 10, display: 'flex', flexDirection: 'column', gap: '12px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', color: '#22d3ee' }}>
-          <div style={{ padding: '8px', background: 'rgba(34, 211, 238, 0.1)', borderRadius: '10px', border: '1px solid rgba(34, 211, 238, 0.4)', boxShadow: '0 0 15px rgba(34, 211, 238, 0.2)' }}>
-            <Anchor size={24} className="animate-pulse" />
-          </div>
-          <div>
-            <h2 style={{ margin: 0, fontSize: '1.4rem', letterSpacing: '4px', fontWeight: 'bold', textShadow: '0 0 15px rgba(34, 211, 238, 0.6)' }}>SHADOWNET MARITIME</h2>
-            <div style={{ fontSize: '0.65rem', color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px', fontFamily: 'monospace' }}>
-                <Activity size={12} /> <span style={{ color: '#22d3ee' }}>ACTIVE SIGNALS: {activeCount.toLocaleString()}</span> // SINGLETON V11
+      {/* TACTICAL HUD (Linked to INTEL) */}
+      {uiVisibility.leftPanel && (
+        <div style={{ position: 'absolute', top: '80px', left: '24px', zIndex: 10, display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', color: '#22d3ee' }}>
+            <div style={{ padding: '8px', background: 'rgba(34, 211, 238, 0.1)', borderRadius: '10px', border: '1px solid rgba(34, 211, 238, 0.4)', boxShadow: '0 0 15px rgba(34, 211, 238, 0.2)' }}>
+              <Anchor size={24} className="animate-pulse" />
+            </div>
+            <div>
+              <h2 style={{ margin: 0, fontSize: '1.4rem', letterSpacing: '4px', fontWeight: 'bold', textShadow: '0 0 15px rgba(34, 211, 238, 0.6)' }}>SHADOWNET MARITIME</h2>
+              <div style={{ fontSize: '0.65rem', color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px', fontFamily: 'monospace' }}>
+                  <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: activeCount > 0 ? '#22c55e' : '#ef4444', boxShadow: activeCount > 0 ? '0 0 8px #22c55e' : 'none' }} />
+                  <span style={{ color: '#22d3ee' }}>SIGNALS DETECTED: {activeCount.toLocaleString()}</span>
+              </div>
             </div>
           </div>
         </div>
-      </div>
+      )}
 
-      {/* CONFLICT ZONE DATA NOTICE (BILINGUAL) */}
-      <div style={{ 
-        position: 'absolute', 
-        top: '80px', 
-        right: '24px', 
-        zIndex: 10, 
-        maxWidth: '320px', 
-        background: 'rgba(13, 17, 23, 0.85)', 
-        backdropFilter: 'blur(12px)', 
-        border: '1px solid #ef4444', 
-        borderLeft: '4px solid #ef4444',
-        borderRadius: '4px 12px 12px 4px', 
-        padding: '16px',
-        boxShadow: '0 10px 30px rgba(239, 68, 68, 0.15)'
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
-          <div style={{ width: '10px', height: '10px', background: '#ef4444', borderRadius: '50%', animation: 'pulse 1s infinite' }} />
-          <span style={{ color: '#ef4444', fontSize: '0.75rem', fontWeight: '900', letterSpacing: '2px' }}>CRITICAL COVERAGE WARNING</span>
-        </div>
-        
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-          <div>
-            <p style={{ color: '#fff', fontSize: '0.65rem', fontWeight: 'bold', margin: '0 0 4px 0', textTransform: 'uppercase' }}>EN: Tactical Restrictions Active</p>
-            <p style={{ color: '#94a3b8', fontSize: '0.6rem', margin: 0, lineHeight: '1.4' }}>
-              Conflict zone vessel tracking (Black/Red Sea) requires Tier-2 API. Direct telemetry may be spoofed or obfuscated in kinetic zones.
-            </p>
+      {/* CONFLICT ZONE DATA NOTICE (Linked to METRICS) */}
+      {uiVisibility.rightPanel && (
+        <div style={{ 
+          position: 'absolute', 
+          top: '80px', 
+          right: '24px', 
+          zIndex: 10, 
+          maxWidth: '320px', 
+          background: 'rgba(13, 17, 23, 0.85)', 
+          backdropFilter: 'blur(12px)', 
+          border: '1px solid #ef4444', 
+          borderLeft: '4px solid #ef4444',
+          borderRadius: '4px 12px 12px 4px', 
+          padding: '16px',
+          boxShadow: '0 10px 30px rgba(239, 68, 68, 0.15)'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
+            <div style={{ width: '10px', height: '10px', background: '#ef4444', borderRadius: '50%', animation: 'pulse 1s infinite' }} />
+            <span style={{ color: '#ef4444', fontSize: '0.75rem', fontWeight: '900', letterSpacing: '2px' }}>CRITICAL COVERAGE WARNING</span>
           </div>
           
-          <div style={{ borderTop: '1px solid rgba(239, 68, 68, 0.2)', paddingTop: '10px' }}>
-            <p style={{ color: '#fff', fontSize: '0.65rem', fontWeight: 'bold', margin: '0 0 4px 0', textTransform: 'uppercase' }}>TR: Taktiksel Kısıtlama Aktif</p>
-            <p style={{ color: '#94a3b8', fontSize: '0.6rem', margin: 0, lineHeight: '1.4' }}>
-              Çatışma bölgesi takibi (Karadeniz/Kızıldeniz) Tier-2 API gerektirir. Sıcak bölgelerde canlı veriler gizlenmiş veya gecikmeli olabilir.
-            </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            <div>
+              <p style={{ color: '#fff', fontSize: '0.65rem', fontWeight: 'bold', margin: '0 0 4px 0', textTransform: 'uppercase' }}>EN: Tactical Restrictions Active</p>
+              <p style={{ color: '#94a3b8', fontSize: '0.6rem', margin: 0, lineHeight: '1.4' }}>
+                Conflict zone vessel tracking (Black/Red Sea) requires Tier-2 API. Direct telemetry may be spoofed or obfuscated in kinetic zones.
+              </p>
+            </div>
+            
+            <div style={{ borderTop: '1px solid rgba(239, 68, 68, 0.2)', paddingTop: '10px' }}>
+              <p style={{ color: '#fff', fontSize: '0.65rem', fontWeight: 'bold', margin: '0 0 4px 0', textTransform: 'uppercase' }}>TR: Taktiksel Kısıtlama Aktif</p>
+              <p style={{ color: '#94a3b8', fontSize: '0.6rem', margin: 0, lineHeight: '1.4' }}>
+                Çatışma bölgesi takibi (Karadeniz/Kızıldeniz) Tier-2 API gerektirir. Sıcak bölgelerde canlı veriler gizlenmiş veya gecikmeli olabilir.
+              </p>
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       <div style={{ position: 'absolute', bottom: '120px', left: '30px', color: 'rgba(255,255,255,0.4)', fontSize: '0.6rem', fontFamily: 'monospace', display: 'flex', flexDirection: 'column', gap: '4px' }}>
         <div>LAT: {((90 - ( ( (dimensions.height/2) - transformRef.current.y) / transformRef.current.k) / (dimensions.height/180) )).toFixed(4)}</div>
@@ -379,7 +413,7 @@ export default function MaritimeMap2D() {
       </div>
 
       {selectedVessel && (
-        <div style={{ position: 'absolute', bottom: '24px', right: '24px', zIndex: 100, width: '320px', background: 'rgba(13, 17, 23, 0.95)', backdropFilter: 'blur(16px)', border: '1px solid rgba(56, 189, 248, 0.4)', borderRadius: '16px', padding: '20px', color: '#fff', boxShadow: '0 20px 50px rgba(0,0,0,0.8)', animation: 'slideIn 0.3s ease-out' }}>
+        <div style={{ position: 'absolute', bottom: '100px', right: '24px', zIndex: 100, width: '320px', background: 'rgba(13, 17, 23, 0.95)', backdropFilter: 'blur(16px)', border: '1px solid rgba(56, 189, 248, 0.4)', borderRadius: '16px', padding: '20px', color: '#fff', boxShadow: '0 20px 50px rgba(0,0,0,0.8)', animation: 'slideIn 0.3s ease-out' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '16px' }}>
             <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
                 <div style={{ padding: '8px', background: 'rgba(56, 189, 248, 0.1)', borderRadius: '10px' }}>

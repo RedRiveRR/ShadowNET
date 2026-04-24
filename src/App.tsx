@@ -5,7 +5,6 @@ import RadarMap2D from './components/RadarMap2D';
 import LeftPanel from './components/LeftPanel';
 import RightPanel from './components/RightPanel';
 import BottomDrawer from './components/BottomDrawer';
-import Legend from './components/Legend';
 import { startDataStreams } from './services/api';
 import { Globe as GlobeIcon, Crosshair, Ship } from 'lucide-react';
 import ErrorBoundary from './components/ErrorBoundary';
@@ -13,7 +12,7 @@ import MaritimeMap2D from './components/MaritimeMap2D';
 import './App.css';
 function App() {
   const isStarted = useRef(false);
-  const { activeView, setActiveView } = useMetricsStore();
+  const { activeView, setActiveView, uiVisibility, setUIVisibility, isBottomDrawerOpen } = useMetricsStore();
 
   useEffect(() => {
     if (!isStarted.current) {
@@ -46,15 +45,36 @@ function App() {
         </button>
       </div>
 
+      {/* HUD TOGGLES (Fixed Controls - Only in GLOBE, MARITIME and RADAR views) */}
+      {(activeView === 'GLOBE' || activeView === 'MARITIME' || activeView === 'RADAR') && (
+        <>
+          <div style={{ position: 'absolute', bottom: isBottomDrawerOpen ? '46vh' : '48px', left: '24px', zIndex: 1100, display: 'flex', gap: '8px', transition: 'bottom 0.4s cubic-bezier(0.4, 0, 0.2, 1)' }}>
+            <HudButton 
+              active={uiVisibility.leftPanel} 
+              onClick={() => setUIVisibility({ leftPanel: !uiVisibility.leftPanel })} 
+              label="INTEL" 
+            />
+            <HudButton 
+              active={uiVisibility.bottomDrawer} 
+              onClick={() => setUIVisibility({ bottomDrawer: !uiVisibility.bottomDrawer })} 
+              label="TERMINAL" 
+            />
+          </div>
+
+          <div style={{ position: 'absolute', bottom: isBottomDrawerOpen ? '46vh' : '48px', right: '24px', zIndex: 1100, display: 'flex', gap: '8px', transition: 'bottom 0.4s cubic-bezier(0.4, 0, 0.2, 1)' }}>
+            <HudButton 
+              active={uiVisibility.rightPanel} 
+              onClick={() => setUIVisibility({ rightPanel: !uiVisibility.rightPanel })} 
+              label="METRICS" 
+            />
+          </div>
+        </>
+      )}
+
       {/* CONDITIONAL MAIN VIEW */}
       {activeView === 'GLOBE' ? (
         <ErrorBoundary>
           <GlobeMap />
-          <LeftPanel />
-          <RightPanel />
-          
-          <Legend />
-          <BottomDrawer />
         </ErrorBoundary>
       ) : activeView === 'MARITIME' ? (
         <ErrorBoundary>
@@ -65,8 +85,39 @@ function App() {
           <RadarMap2D />
         </ErrorBoundary>
       )}
+
+      {/* SHARED HUD OVERLAYS (Filtered by View) */}
+      {activeView === 'GLOBE' && (
+        <>
+          {uiVisibility.leftPanel && <LeftPanel />}
+          {uiVisibility.rightPanel && <RightPanel />}
+        </>
+      )}
+      {uiVisibility.bottomDrawer && <BottomDrawer hideBar={activeView !== 'GLOBE'} />}
     </div>
   );
 }
 
+function HudButton({ active, onClick, label }: any) {
+  return (
+    <button 
+      onClick={onClick}
+      style={{
+        padding: '6px 12px',
+        borderRadius: '6px',
+        border: '1px solid rgba(56, 189, 248, 0.3)',
+        background: active ? 'rgba(56, 189, 248, 0.2)' : 'rgba(15, 23, 42, 0.6)',
+        color: active ? '#38bdf8' : '#94a3b8',
+        cursor: 'pointer',
+        fontSize: '0.6rem',
+        fontWeight: '900',
+        letterSpacing: '1px',
+        backdropFilter: 'blur(8px)',
+        transition: 'all 0.2s ease'
+      }}
+    >
+      {label} {active ? '[ON]' : '[OFF]'}
+    </button>
+  );
+}
 export default App;

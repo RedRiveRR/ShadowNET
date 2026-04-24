@@ -7,7 +7,8 @@ import * as satellite from 'satellite.js';
 
 // === HYBRID CONFIG ===
 // Dev mode uses proxy from vite.config.ts, Production uses the Render URL or relative if on the same domain
-const RENDER_URL = import.meta.env.PROD ? 'https://shadownet-vwvw.onrender.com' : '';
+// Dev mode uses relative URLs, Production also uses relative since we use Nginx
+const RENDER_URL = '';
 
 // === DEPREMLER ===
 export const fetchEarthquakes = async () => {
@@ -113,7 +114,9 @@ export const fetchSatellites = async () => {
     if (!response.ok) return;
     const data = await response.json();
     if (Array.isArray(data) && data.length > 0) {
-      const sats: Satellite[] = data.map((s: any, i: number) => ({
+      // V11.0: Balanced limit for stability
+      const limitedData = data.slice(0, 500);
+      const sats: Satellite[] = limitedData.map((s: any, i: number) => ({
         id: `sat-${i}`, name: s.name, tle1: s.tle1, tle2: s.tle2
       }));
       useMetricsStore.getState().setSatellites(sats);
@@ -124,13 +127,29 @@ export const fetchSatellites = async () => {
 };
 
 // === HABERLER (Keyword-Geocoding) ===
-const COUNTRY_MAP: Record<string, {lat: number, lng: number}> = {
-  'USA': {lat: 37, lng: -95}, 'US': {lat: 37, lng: -95}, 'United States': {lat: 37, lng: -95},
-  'Iran': {lat: 32, lng: 53}, 'Russia': {lat: 61, lng: 105}, 'Ukraine': {lat: 48, lng: 31},
-  'China': {lat: 35, lng: 103}, 'Israel': {lat: 31, lng: 35}, 'Turkey': {lat: 39, lng: 35},
-  'UK': {lat: 55, lng: -3}, 'Germany': {lat: 51, lng: 10}, 'France': {lat: 46, lng: 2},
-  'Havana': {lat: 23, lng: -82}, 'Cuba': {lat: 21, lng: -77}, 'Kyiv': {lat: 50, lng: 30},
-  'Taiwan': {lat: 23, lng: 121}, 'Japan': {lat: 36, lng: 138}, 'Gaza': {lat: 31.3, lng: 34.3}
+const COUNTRY_MAP: Record<string, {lat: number, lng: number, keywords: string[]}> = {
+  'USA': {lat: 37, lng: -95, keywords: ['usa', 'us', 'america', 'washington', 'biden', 'pentagon', 'american']},
+  'Russia': {lat: 61, lng: 105, keywords: ['russia', 'moscow', 'putin', 'kremlin', 'russian']},
+  'China': {lat: 35, lng: 103, keywords: ['china', 'beijing', 'xi jinping', 'chinese']},
+  'India': {lat: 20, lng: 78, keywords: ['india', 'delhi', 'modi', 'indian']},
+  'Turkey': {lat: 39, lng: 35, keywords: ['turkey', 'ankara', 'istanbul', 'turkish', 'erdogan']},
+  'UK': {lat: 55, lng: -3, keywords: ['uk', 'london', 'british', 'england', 'britain']},
+  'France': {lat: 46, lng: 2, keywords: ['france', 'paris', 'french', 'macron']},
+  'Germany': {lat: 51, lng: 10, keywords: ['germany', 'berlin', 'german', 'scholz']},
+  'Iran': {lat: 32, lng: 53, keywords: ['iran', 'tehran', 'iranian', 'khamenei']},
+  'Israel': {lat: 31, lng: 35, keywords: ['israel', 'jerusalem', 'tel aviv', 'israeli', 'netanyahu']},
+  'Ukraine': {lat: 48, lng: 31, keywords: ['ukraine', 'kyiv', 'zelensky', 'ukrainian']},
+  'Japan': {lat: 36, lng: 138, keywords: ['japan', 'tokyo', 'japanese']},
+  'Brazil': {lat: -14, lng: -51, keywords: ['brazil', 'brazilian', 'lula']},
+  'Egypt': {lat: 26, lng: 30, keywords: ['egypt', 'cairo', 'egyptian']},
+  'Saudi Arabia': {lat: 23, lng: 45, keywords: ['saudi', 'riyadh', 'arabia']},
+  'UAE': {lat: 24, lng: 54, keywords: ['uae', 'dubai', 'emirates']},
+  'North Korea': {lat: 40, lng: 127, keywords: ['north korea', 'pyongyang', 'kim jong']},
+  'South Korea': {lat: 35, lng: 127, keywords: ['south korea', 'seoul', 'korean']},
+  'Australia': {lat: -25, lng: 133, keywords: ['australia', 'australian', 'canberra']},
+  'Canada': {lat: 56, lng: -106, keywords: ['canada', 'canadian', 'ottawa']},
+  'Pakistan': {lat: 30, lng: 69, keywords: ['pakistan', 'islamabad', 'pakistani']},
+  'Syria': {lat: 34, lng: 38, keywords: ['syria', 'damascus', 'syrian']}
 };
 
 export const fetchNews = async () => {
@@ -141,16 +160,29 @@ export const fetchNews = async () => {
     if (Array.isArray(data) && data.length > 0) {
       const news: NewsEvent[] = data.map((art: any, i: number) => {
         let lat, lng;
-        // Başlıkta ülke ara
-        for (const [key, coords] of Object.entries(COUNTRY_MAP)) {
-          if (art.title.toLowerCase().includes(key.toLowerCase())) {
-            lat = coords.lat; lng = coords.lng;
-            break;
+        const searchTitle = art.title.toLowerCase();
+        
+        // 1. Ülke Tespiti (Genişletilmiş Anahtar Kelimeler)
+        for (const [_, config] of Object.entries(COUNTRY_MAP)) {
+          for (const kw of config.keywords) {
+            const regex = new RegExp(`\\b${kw}\\b`, 'i');
+            if (regex.test(searchTitle)) {
+              lat = config.lat + (Math.random() - 0.5) * 2;
+              lng = config.lng + (Math.random() - 0.5) * 2;
+              break;
+            }
           }
+          if (lat) break; // Ülke bulunduysa döngüden çık
+        }
+
+        // 2. NASA Fallback (Eğer yukarıdaki döngüde bir ülke bulunamadıysa)
+        if (!lat && (art.source?.toLowerCase().includes('nasa') || art.title.toLowerCase().includes('nasa'))) {
+          lat = COUNTRY_MAP['USA'].lat;
+          lng = COUNTRY_MAP['USA'].lng;
         }
         return {
           id: `news-${i}-${Date.now()}`, title: art.title, url: art.url || '',
-          source: art.source || 'NY Times World', time: Date.now(), lat, lng
+          source: art.source || 'Global News', time: Date.now(), lat, lng
         };
       });
       useMetricsStore.getState().setNewsEvents(news);
@@ -390,11 +422,13 @@ export const fetchIntelEvents = async () => {
       useMetricsStore.getState().setIntelEvents(allArticles);
       
       if (allArticles.length === 0) {
-        console.warn('[Intel] 0 makale alındı. Ağ hatası olabilir, 15 saniye sonra tekrar deneniyor...');
-        setTimeout(fetchIntelEvents, 15000);
+        console.warn('[Intel] 0 makale alındı. Ağ hatası olabilir.');
+        useMetricsStore.getState().setAiStatus('ready');
+        setTimeout(fetchIntelEvents, 30000);
         return;
       }
 
+      useMetricsStore.getState().setAiStatus('ready');
       console.log(`[Intel] ${allArticles.length} özgün makale yüklendi, AI analizine gönderiliyor...`);
 
       // Yapay Zeka Duygu Analizi ve Konumlandırma (Harita uyarıları için gerekli)
@@ -467,8 +501,9 @@ export const startDataStreams = () => {
   activeIntervals.push(window.setInterval(fetchEarthquakes, 60000));
   activeIntervals.push(window.setInterval(() => {
     const bounds = useMetricsStore.getState().apiStatus.currentBounds;
+    // V13.1: High-Frequency Zoom Scan (4s if focused, else 10s)
     fetchFlights(bounds || undefined);
-  }, 10000));
+  }, useMetricsStore.getState().apiStatus.currentBounds ? 4000 : 10000));
   activeIntervals.push(window.setInterval(fetchISS, 3000));
   activeIntervals.push(window.setInterval(fetchSatellites, 300000));
   activeIntervals.push(window.setInterval(fetchNews, 120000));
@@ -485,6 +520,7 @@ export const startDataStreams = () => {
 
   initMLWorker();
   fetchIntelEvents();
+  // V11.0: Balanced refresh for Intel (15 mins)
   activeIntervals.push(window.setInterval(fetchIntelEvents, 900000));
 };
 

@@ -30,10 +30,8 @@ const GHOST_LIFETIME_MS = 10 * 60 * 1000; // 10 dakika - Haritadan tamamen silin
 const LIVE_TIMEOUT_MS = 6 * 60 * 1000;   // 6 dakika (4 x 90s Scan) - Hayalet moduna geçiş süresi
 
 export default function RadarMap2D() {
-
-  const { flights, selectedFlight, setSelectedFlight, apiStatus } = useMetricsStore();
+  const { flights, selectedFlight, setSelectedFlight, apiStatus, uiVisibility } = useMetricsStore();
   const lastUpdateRef = useRef<number>(Date.now());
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [dimensions, setDimensions] = useState({ width: window.innerWidth, height: window.innerHeight });
   
   const [geoData, setGeoData] = useState<any>(null);
@@ -593,8 +591,8 @@ export default function RadarMap2D() {
         )}
       </div>
 
-      {/* SAĞ LİSTE PANELİ */}
-      {isSidebarOpen ? (
+      {/* SAĞ LİSTE PANELİ (Linked to METRICS) */}
+      {uiVisibility.rightPanel && (
         <div style={{ width: '320px', background: 'rgba(15,23,42,0.95)', borderLeft: '1px solid rgba(56, 189, 248, 0.2)', backdropFilter: 'blur(20px)', display: 'flex', flexDirection: 'column', zIndex: 10 }}>
           <div style={{ padding: '16px 20px', borderBottom: '1px solid rgba(56, 189, 248, 0.1)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#38bdf8' }}>
@@ -605,12 +603,6 @@ export default function RadarMap2D() {
               <span style={{ background: '#facc15', color: '#000', padding: '2px 8px', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 'bold' }}>
                 {(flights || []).length}
               </span>
-              <button 
-                onClick={() => setIsSidebarOpen(false)} 
-                style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
-              >
-                <X size={18} />
-              </button>
             </div>
           </div>
 
@@ -641,126 +633,119 @@ export default function RadarMap2D() {
             ))}
           </div>
         </div>
-      ) : (
-        <button 
-          onClick={() => setIsSidebarOpen(true)}
-          style={{ position: 'absolute', top: '100px', right: '0', background: 'rgba(15,23,42,0.9)', border: '1px solid rgba(56, 189, 248, 0.4)', borderRight: 'none', borderRadius: '12px 0 0 12px', padding: '12px 8px', color: '#38bdf8', cursor: 'pointer', zIndex: 20, backdropFilter: 'blur(10px)', boxShadow: '-4px 0 15px rgba(0,0,0,0.5)' }}
-        >
-          <List size={20} />
-        </button>
       )}
 
-      {/* Savaş Bölgesi İstihbarat Terminali (Global & Targeted) */}
-      <div style={{ 
-        position: 'absolute', 
-        bottom: '20px', 
-        left: '20px', 
-        width: '400px', 
-        background: 'rgba(15,23,42,0.95)', 
-        border: '1px solid rgba(239,68,68,0.5)', 
-        borderRadius: '8px', 
-        boxShadow: '0 10px 25px -5px rgba(0,0,0,0.5), 0 0 15px rgba(239,68,68,0.2)', 
-        backdropFilter: 'blur(12px)', 
-        overflow: 'hidden', 
-        zIndex: 100, 
-        maxHeight: '400px',
-        display: 'flex',
-        flexDirection: 'column',
-        animation: 'slideRight 0.4s ease-out' 
-      }}>
-        <div style={{ background: 'rgba(239,68,68,0.15)', padding: '12px 16px', borderBottom: '1px solid rgba(239,68,68,0.3)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <div style={{ position: 'relative', width: '8px', height: '8px' }}>
-              <div style={{ position: 'absolute', width: '100%', height: '100%', borderRadius: '50%', background: '#ef4444', animation: 'sonarPing 2s cubic-bezier(0, 0, 0.2, 1) infinite' }} />
-              <div style={{ position: 'absolute', width: '100%', height: '100%', borderRadius: '50%', background: '#ef4444' }} />
-            </div>
-            <h3 style={{ color: '#f87171', fontFamily: 'monospace', fontWeight: 'bold', margin: 0, fontSize: '0.9rem', letterSpacing: '1px' }}>
-              {selectedConflict ? `RESTRICTED: ${selectedConflict.countryName}` : 'GLOBAL INTELLIGENCE FEED'}
-            </h3>
-          </div>
-          {selectedConflict && (
-            <button onClick={() => setSelectedConflict(null)} style={{ background: 'transparent', border: 'none', color: 'rgba(255,255,255,0.5)', cursor: 'pointer', padding: '0 4px', display: 'flex', alignItems: 'center' }}>
-              <X size={16} />
-            </button>
-          )}
-        </div>
-        
-        <div className="custom-scrollbar" style={{ padding: '16px', overflowY: 'auto', flex: 1, pointerEvents: 'all' }}>
-          <div style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.5)', fontFamily: 'monospace', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <div style={{ width: '4px', height: '4px', background: 'rgba(255,255,255,0.5)' }} /> 
-            LATEST INTELLIGENCE INTERCEPTS
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            {(() => {
-              const intelEvents = useMetricsStore.getState().intelEvents || [];
-              
-              if (intelEvents.length === 0) {
-                return (
-                  <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.5)', fontStyle: 'italic', padding: '10px', background: 'rgba(255,255,255,0.02)', borderRadius: '4px' }}>
-                    No live intercepts. Persisting baseline tactical awareness.
-                  </div>
-                );
-              }
-
-              // Group by category/topic
-              const categories = [...new Set(intelEvents.map(e => e.topicId))];
-
-              return categories.map(cat => (
-                <div key={cat} style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '16px' }}>
-                  <div style={{ fontSize: '0.7rem', color: '#ef4444', fontWeight: 'bold', fontFamily: 'monospace', textTransform: 'uppercase' }}>
-                    [{cat}]
-                  </div>
-                  {intelEvents.filter(e => e.topicId === cat).slice(0, 3).map((item, idx) => (
-                    <div key={idx} style={{ background: 'rgba(255,255,255,0.03)', padding: '12px', borderRadius: '6px', borderLeft: '2px solid rgba(239,68,68,0.5)' }}>
-                      <a href={item.url} target="_blank" rel="noreferrer" style={{ fontSize: '0.85rem', color: '#e2e8f0', fontWeight: '600', textDecoration: 'none', display: 'block', marginBottom: '6px', lineHeight: '1.3' }}>
-                        {item.title}
-                      </a>
-                      <div style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.4)', marginTop: '8px', fontFamily: 'monospace' }}>
-                         {item.source} · {new Date(item.date).toLocaleTimeString()}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ));
-            })()}
-          </div>
-        </div>
-      </div>
-
-        {/* TACTICAL LEGEND (Sol Üst) */}
+      {/* Savaş Bölgesi İstihbarat Terminali (Linked to INTEL) */}
+      {uiVisibility.leftPanel && (
         <div style={{ 
           position: 'absolute', 
-          top: '80px', 
+          bottom: '20px', 
           left: '20px', 
-          zIndex: 1000, 
-          padding: '12px', 
-          background: 'rgba(15,23,42,0.9)', 
-          border: '1px solid rgba(56, 189, 248, 0.3)', 
-          borderRadius: '8px',
-          backdropFilter: 'blur(12px)',
-          fontFamily: 'monospace',
-          fontSize: '0.65rem',
-          boxShadow: '0 4px 20px rgba(0,0,0,0.6)',
-          animation: 'slideRight 0.5s ease'
+          width: '400px', 
+          background: 'rgba(15,23,42,0.95)', 
+          border: '1px solid rgba(239,68,68,0.5)', 
+          borderRadius: '8px', 
+          boxShadow: '0 10px 25px -5px rgba(0,0,0,0.5), 0 0 15px rgba(239,68,68,0.2)', 
+          backdropFilter: 'blur(12px)', 
+          overflow: 'hidden', 
+          zIndex: 100, 
+          maxHeight: '400px',
+          display: 'flex',
+          flexDirection: 'column',
+          animation: 'slideRight 0.4s ease-out' 
         }}>
-          <div style={{ color: '#38bdf8', marginBottom: '8px', fontWeight: 'bold', borderBottom: '1px solid rgba(56, 189, 248, 0.1)', paddingBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-            Tactical Identifiers
+          <div style={{ background: 'rgba(239,68,68,0.15)', padding: '12px 16px', borderBottom: '1px solid rgba(239,68,68,0.3)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <div style={{ position: 'relative', width: '8px', height: '8px' }}>
+                <div style={{ position: 'absolute', width: '100%', height: '100%', borderRadius: '50%', background: '#ef4444', animation: 'sonarPing 2s cubic-bezier(0, 0, 0.2, 1) infinite' }} />
+                <div style={{ position: 'absolute', width: '100%', height: '100%', borderRadius: '50%', background: '#ef4444' }} />
+              </div>
+              <h3 style={{ color: '#f87171', fontFamily: 'monospace', fontWeight: 'bold', margin: 0, fontSize: '0.9rem', letterSpacing: '1px' }}>
+                {selectedConflict ? `RESTRICTED: ${selectedConflict.countryName}` : 'GLOBAL INTELLIGENCE FEED'}
+              </h3>
+            </div>
+            {selectedConflict && (
+              <button onClick={() => setSelectedConflict(null)} style={{ background: 'transparent', border: 'none', color: 'rgba(255,255,255,0.5)', cursor: 'pointer', padding: '0 4px', display: 'flex', alignItems: 'center' }}>
+                <X size={16} />
+              </button>
+            )}
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <div style={{ width: 0, height: 0, borderLeft: '4px solid transparent', borderRight: '4px solid transparent', borderBottom: '8px solid #facc15' }} />
-              <span style={{ color: '#cbd5e1' }}>AERIAL ENTITY (LIVE)</span>
+          
+          <div className="custom-scrollbar" style={{ padding: '16px', overflowY: 'auto', flex: 1, pointerEvents: 'all' }}>
+            <div style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.5)', fontFamily: 'monospace', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <div style={{ width: '4px', height: '4px', background: 'rgba(255,255,255,0.5)' }} /> 
+              LATEST INTELLIGENCE INTERCEPTS
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <div style={{ width: 0, height: 0, borderLeft: '4px solid transparent', borderRight: '4px solid transparent', borderBottom: '8px solid #94a3b8', opacity: 0.6 }} />
-              <span style={{ color: '#94a3b8' }}>GHOST TRACK (PREDICTED)</span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <div style={{ width: '8px', height: '8px', background: '#22c55e', borderRadius: '50%', boxShadow: '0 0 5px #22c55e' }} />
-              <span style={{ color: '#cbd5e1' }}>VIP SOURCE ENCRYPTED</span>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {(() => {
+                const intelEvents = useMetricsStore.getState().intelEvents || [];
+                
+                if (intelEvents.length === 0) {
+                  return (
+                    <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.5)', fontStyle: 'italic', padding: '10px', background: 'rgba(255,255,255,0.02)', borderRadius: '4px' }}>
+                      No live intercepts. Persisting baseline tactical awareness.
+                    </div>
+                  );
+                }
+
+                // Group by category/topic
+                const categories = [...new Set(intelEvents.map(e => e.topicId))];
+
+                return categories.map(cat => (
+                  <div key={cat} style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '16px' }}>
+                    <div style={{ fontSize: '0.7rem', color: '#ef4444', fontWeight: 'bold', fontFamily: 'monospace', textTransform: 'uppercase' }}>
+                      [{cat}]
+                    </div>
+                    {intelEvents.filter(e => e.topicId === cat).slice(0, 3).map((item, idx) => (
+                      <div key={idx} style={{ background: 'rgba(255,255,255,0.03)', padding: '12px', borderRadius: '6px', borderLeft: '2px solid rgba(239,68,68,0.5)' }}>
+                        <a href={item.url} target="_blank" rel="noreferrer" style={{ fontSize: '0.85rem', color: '#e2e8f0', fontWeight: '600', textDecoration: 'none', display: 'block', marginBottom: '6px', lineHeight: '1.3' }}>
+                          {item.title}
+                        </a>
+                        <div style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.4)', marginTop: '8px', fontFamily: 'monospace' }}>
+                           {item.source} · {new Date(item.date).toLocaleTimeString()}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ));
+              })()}
             </div>
           </div>
         </div>
+      )}
+
+        {/* TACTICAL LEGEND (Sol Üst - Linked to INTEL) */}
+        {uiVisibility.leftPanel && (
+          <div style={{ 
+            position: 'absolute', 
+            top: '80px', 
+            left: '20px', 
+            zIndex: 1000, 
+            padding: '12px', 
+            background: 'rgba(15,23,42,0.9)', 
+            border: '1px solid rgba(56, 189, 248, 0.3)', 
+            borderRadius: '8px',
+            backdropFilter: 'blur(12px)',
+            fontFamily: 'monospace',
+            fontSize: '0.65rem',
+            boxShadow: '0 4px 20px rgba(0,0,0,0.6)',
+            animation: 'slideRight 0.5s ease'
+          }}>
+            <div style={{ color: '#38bdf8', marginBottom: '8px', fontWeight: 'bold', borderBottom: '1px solid rgba(56, 189, 248, 0.1)', paddingBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+              Tactical Identifiers
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{ width: 0, height: 0, borderLeft: '4px solid transparent', borderRight: '4px solid transparent', borderBottom: '8px solid #facc15' }} />
+                <span style={{ color: '#cbd5e1' }}>AERIAL ENTITY (LIVE)</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{ width: 0, height: 0, borderLeft: '4px solid transparent', borderRight: '4px solid transparent', borderBottom: '8px solid #94a3b8', opacity: 0.6 }} />
+                <span style={{ color: '#94a3b8' }}>GHOST TRACK (PREDICTED)</span>
+              </div>
+            </div>
+          </div>
+        )}
 
 
       <style>{`

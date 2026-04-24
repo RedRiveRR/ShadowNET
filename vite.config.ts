@@ -4,6 +4,13 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
   server: {
+    allowedHosts: ['shadownet.redriverlab.me', 'redriverlab.me'],
+    host: true,
+    hmr: {
+      protocol: 'wss',
+      host: 'shadownet.redriverlab.me',
+      clientPort: 443
+    },
     proxy: {
       '/api': {
         target: 'http://localhost:8080',

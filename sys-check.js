@@ -1,10 +1,9 @@
-/**
- * ShadowNet V9.0 - System Integrity Check
- * Bu araç, ShadowNet'in çalışması için gereken .env yapılandırmasını doğrular.
- */
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
-const fs = require('fs');
-const path = require('path');
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 console.log('🌐 SHADOWNET V9.0 // PRE-FLIGHT SYSTEM CHECK');
 console.log('-------------------------------------------');
@@ -26,7 +25,7 @@ const requiredKeys = [
     'OPENSKY_CLIENT_SECRET',
     'AIS_STREAM_API_KEY',
     'OTX_API_KEY',
-    'CLOUDFLARE_API_TOKEN'
+    'CF_API_TOKEN'
 ];
 
 let missing = 0;

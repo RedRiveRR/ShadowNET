@@ -3,14 +3,14 @@ import { useMetricsStore } from '../store/useMetricsStore';
 import { ChevronUp, ChevronDown, Newspaper, Zap, Bitcoin, ExternalLink, Activity, Brain, RefreshCw } from 'lucide-react';
 import { rebootSystem } from '../services/api';
 
-export default function BottomDrawer() {
-  const [isOpen, setIsOpen] = useState(false);
+export default function BottomDrawer({ hideBar = false }: { hideBar?: boolean }) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [isRebooting, setIsRebooting] = useState(false);
 
   const { 
     securityAlerts, earthquakes, newsEvents, cryptoWhales, 
-    torNodes, intelEvents, threatAlerts, aiStatus 
+    torNodes, intelEvents, threatAlerts, aiStatus,
+    isBottomDrawerOpen, setBottomDrawerOpen
   } = useMetricsStore();
 
   const handleReboot = async (e: React.MouseEvent) => {
@@ -25,20 +25,31 @@ export default function BottomDrawer() {
   return (
     <div 
       className="bottom-drawer transition-height"
-      style={{ position: 'absolute', bottom: 0, left: 0, width: '100%', height: isOpen ? '45vh' : '40px', display: 'flex', flexDirection: 'column', zIndex: 20 }}
+      style={{ 
+        position: 'absolute', 
+        bottom: 0, 
+        left: 0, 
+        width: '100%', 
+        height: isBottomDrawerOpen ? '45vh' : (hideBar ? '0' : '40px'), 
+        display: 'flex', 
+        flexDirection: 'column', 
+        zIndex: 20,
+        overflow: hideBar && !isBottomDrawerOpen ? 'hidden' : 'visible'
+      }}
     >
-      <div 
-        onClick={() => setIsOpen(!isOpen)}
-        style={{ 
-          width: '100%', height: '40px', cursor: 'pointer', display: 'flex', 
-          justifyContent: 'center', alignItems: 'center', background: 'rgba(0,0,0,0.85)', 
-          borderTop: '1px solid var(--panel-border)', position: 'relative'
-        }}
-      >
-        {isOpen ? <ChevronDown color="var(--text-primary)" size={24} /> : <ChevronUp color="var(--text-primary)" size={24} />}
-        <span className="mono" style={{ marginLeft: '10px', fontSize: '0.8rem', letterSpacing: '0.2em' }}>
-          {isOpen ? 'MASTER.TERMINAL [AKTİF]' : 'MASTER.TERMINAL [BEKLEMEDE]'}
-        </span>
+      {!hideBar && (
+        <div 
+          onClick={() => setBottomDrawerOpen(!isBottomDrawerOpen)}
+          style={{ 
+            width: '100%', height: '40px', cursor: 'pointer', display: 'flex', 
+            justifyContent: 'center', alignItems: 'center', background: 'rgba(0,0,0,0.85)', 
+            borderTop: '1px solid var(--panel-border)', position: 'relative'
+          }}
+        >
+          {isBottomDrawerOpen ? <ChevronDown color="var(--text-primary)" size={24} /> : <ChevronUp color="var(--text-primary)" size={24} />}
+          <span className="mono" style={{ marginLeft: '10px', fontSize: '0.8rem', letterSpacing: '0.2em' }}>
+            {isBottomDrawerOpen ? 'MASTER.TERMINAL [AKTİF]' : 'MASTER.TERMINAL [BEKLEMEDE]'}
+          </span>
 
         {/* Tactical Reboot Button (Always on Top Bar) */}
         <button 
@@ -58,8 +69,9 @@ export default function BottomDrawer() {
           {isRebooting ? 'REBOOTING...' : 'REBOOT SYSTEM'}
         </button>
       </div>
+      )}
 
-      <div style={{ flex: 1, display: isOpen ? 'flex' : 'none', padding: '0.8rem', gap: '0.8rem', overflow: 'hidden' }}>
+      <div style={{ flex: 1, display: isBottomDrawerOpen ? 'flex' : 'none', padding: '0.8rem', gap: '0.8rem', overflow: 'hidden' }}>
         
         {/* 0. AI INTELLIGENCE (GDELT + Sentiment) */}
         <div style={{ flex: 1.5, minWidth: 0, display: 'flex', flexDirection: 'column', border: '1px solid rgba(34, 197, 94, 0.3)', borderRadius: '4px', background: 'rgba(0,0,0,0.5)' }}>

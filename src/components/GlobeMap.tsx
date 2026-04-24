@@ -6,9 +6,15 @@ import { Navigation, Rocket, Zap, Crosshair, Play, Pause, X, ExternalLink } from
 
 // === PAYLAŞILAN 3D KAYNAKLAR ===
 
-const satGeom = new THREE.BoxGeometry(0.3, 0.3, 0.3);
+const satGeom = new THREE.SphereGeometry(0.2, 16, 16);
 const satPanelGeom = new THREE.PlaneGeometry(1, 0.25);
-const satMat = new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.8 });
+const satMat = new THREE.MeshStandardMaterial({ 
+  color: '#4facfe', 
+  emissive: '#0061ff',
+  emissiveIntensity: 0.5,
+  transparent: true, 
+  opacity: 0.9 
+});
 const satPanelMat = new THREE.MeshBasicMaterial({ color: '#1d4ed8', side: THREE.DoubleSide });
 
 const issTrussGeom = new THREE.CylinderGeometry(0.1, 0.1, 4, 8);
@@ -19,7 +25,7 @@ export default function GlobeMap() {
   const globeRef = useRef<any>(null);
   const [dimensions, setDimensions] = useState({ width: window.innerWidth, height: window.innerHeight });
   const { 
-    iss, satellites, earthquakes, newsEvents, intelEvents,
+    iss, satellites, torNodes, earthquakes, newsEvents, intelEvents,
     setSelectedFlight,
     selectedSatellite, setSelectedSatellite,
     selectedISS, setSelectedISS,
@@ -56,15 +62,17 @@ export default function GlobeMap() {
     (satellites || []).forEach(s => {
       if (s.lat != null && s.lng != null) data.push({ ...s, __type: 'satellite' });
     });
+    // V12.0: Clickable News Beacons on Globe (Red Glowing Icons)
+    (newsEvents || []).forEach(n => {
+      if (n.lat != null && n.lng != null) data.push({ ...n, __type: 'news' });
+    });
     if (iss) data.push({ ...iss, id: 'iss-unique-id', __type: 'iss' });
     return data;
-  }, [satellites, iss]);
+  }, [satellites, iss, torNodes, newsEvents]);
 
   const objectThreeObject = useCallback((d: any) => {
-    let group: THREE.Group;
-
     if (d.__type === 'iss') {
-      group = new THREE.Group();
+      const group = new THREE.Group();
       const truss = new THREE.Mesh(issTrussGeom, issMat);
       truss.rotation.z = Math.PI / 2;
       group.add(truss);
@@ -77,8 +85,14 @@ export default function GlobeMap() {
         }
       }
       group.scale.set(1.8, 1.8, 1.8);
-    } else {
-      group = new THREE.Group();
+      return group;
+    } 
+    
+    // V11.0: Performans Optimizasyonu - Sadece seçili uydu panelli gözüksün
+    const isSelected = selectedSatellite?.id === d.id;
+    
+    if (isSelected) {
+      const group = new THREE.Group();
       const body = new THREE.Mesh(satGeom, satMat);
       group.add(body);
       const p1 = new THREE.Mesh(satPanelGeom, satPanelMat);
@@ -87,111 +101,81 @@ export default function GlobeMap() {
       const p2 = new THREE.Mesh(satPanelGeom, satPanelMat);
       p2.position.x = -0.65; p2.rotation.y = -Math.PI/4;
       group.add(p2);
+      return group;
     }
 
-    return group;
-  }, []);
 
-  const ringsData = useMemo(() => {
-    const rings: any[] = [];
-    (earthquakes || []).forEach(q => rings.push({ lat: q.lat, lng: q.lng, maxR: Math.max(q.mag * 2, 2), propagationSpeed: 2, repeatPeriod: 800, color: 'rgba(245, 158, 11, 0.7)' }));
-    (newsEvents || []).forEach(n => { if (n.lat && n.lng) rings.push({ lat: n.lat, lng: n.lng, maxR: 3, propagationSpeed: 1, repeatPeriod: 2000, color: 'rgba(239, 68, 68, 0.8)' }); });
+    if (d.__type === 'news') {
+      const g = new THREE.CylinderGeometry(0.01, 0.4, 0.8, 4);
+      const m = new THREE.MeshBasicMaterial({ color: '#ef4444', transparent: true, opacity: 0.8 });
+      const mesh = new THREE.Mesh(g, m);
+      mesh.rotation.x = Math.PI / 2;
+      return mesh;
+    }
 
-    // V9.0: AI Tehdit Halkaları
-    // Koordinat haritası: topic -> yaklaşık bölge merkezi
+    // Seçili değilse sadece basit bir küre
+    return new THREE.Mesh(satGeom, satMat);
+  }, [selectedSatellite]);
+
+    // V12.5: Deterministic Jitter & Coordination Logic
     const topicCoords: Record<string, { lat: number; lng: number }> = {
-      military:      { lat: 35.0, lng: 39.0 },   // Orta Doğu
-      cyber:         { lat: 39.9, lng: 116.4 },   // Pekin
-      nuclear:       { lat: 35.7, lng: 51.4 },    // Tahran
-      sanctions:     { lat: 55.7, lng: 37.6 },    // Moskova
-      intelligence:  { lat: 38.9, lng: -77.0 },   // Washington DC
-      maritime:      { lat: 10.0, lng: 114.0 },    // Güney Çin Denizi
+        military:      { lat: 35.0, lng: 39.0 },
+        cyber:         { lat: 39.9, lng: 116.4 },
+        nuclear:       { lat: 35.7, lng: 51.4 },
+        sanctions:     { lat: 55.7, lng: 37.6 },
+        intelligence:  { lat: 38.9, lng: -77.0 },
+        maritime:      { lat: 10.0, lng: 114.0 },
     };
-    (threatAlerts || []).forEach(t => {
-      const dbLat = (t as any).lat;
-      const dbLng = (t as any).lng;
-      const coords = topicCoords[t.topicId];
-      const finalLat = dbLat !== undefined ? dbLat : coords?.lat;
-      const finalLng = dbLng !== undefined ? dbLng : coords?.lng;
-      
-      if (finalLat !== undefined && finalLng !== undefined) {
-        rings.push({
-          ...t, // Orijinal veriyi taşı (tıklama için)
-          lat: finalLat,
-          lng: finalLng,
-          maxR: Math.max(t.severity * 8, 3),
-          propagationSpeed: 3,
-          repeatPeriod: 600,
-          color: `rgba(239, 68, 68, ${Math.min(t.severity, 0.95)})`,
+
+    const getJitteredPos = (base: { lat: number, lng: number }, seed: string) => {
+        let hash = 0;
+        for (let i = 0; i < seed.length; i++) hash = ((hash << 5) - hash) + seed.charCodeAt(i);
+        // Deterministic offset based on title/seed (will NOT change on re-render)
+        const latOff = ((Math.abs(hash) % 100) / 20) - 2.5; // +/- 2.5 deg
+        const lngOff = ((Math.abs(hash >> 8) % 100) / 20) - 2.5;
+        return { lat: base.lat + latOff, lng: base.lng + lngOff };
+    };
+
+    // Pre-calculate all jittered positions to keep rings & points perfectly synced
+    const syncData = useMemo(() => {
+        const results = { rings: [] as any[], points: [] as any[] };
+        
+        // 1. Threats
+        (threatAlerts || []).forEach(t => {
+            const base = (t as any).lat !== undefined ? { lat: (t as any).lat, lng: (t as any).lng } : topicCoords[t.topicId];
+            if (!base) return;
+            const pos = getJitteredPos(base, t.title);
+            results.points.push({ ...t, ...pos, size: 0.6, color: '#ef4444', __type: 'threat' });
+            results.rings.push({ ...pos, maxR: Math.max(t.severity * 8, 4), propagationSpeed: 3, repeatPeriod: 800, color: `rgba(239, 68, 68, ${Math.min(t.severity, 0.9)})` });
         });
-      }
-    });
 
-    return rings;
-  }, [earthquakes, newsEvents, threatAlerts]);
+        // 2. Intel
+        (intelEvents || []).forEach(i => {
+            const base = (i as any).lat !== undefined ? { lat: (i as any).lat, lng: (i as any).lng } : topicCoords[i.topicId];
+            if (!base) return;
+            const pos = getJitteredPos(base, i.title);
+            const color = { military: '#ef4444', cyber: '#a855f7', nuclear: '#f59e0b', sanctions: '#3b82f6', intelligence: '#06b6d4', maritime: '#22d3ee' }[i.topicId] || '#94a3b8';
+            results.points.push({ ...i, ...pos, size: 0.5, color, __type: 'intel' });
+        });
 
-  const pathsData = useMemo(() => {
-    return (satellites || []).filter(s => s.path && s.path.length > 0).map(s => ({
-      coords: s.path?.map(p => [p.lat, p.lng]),
-      color: 'rgba(255, 255, 255, 0.1)'
-    }));
-  }, [satellites]);
+        // 3. Earthquakes
+        (earthquakes || []).forEach(q => {
+            results.points.push({ ...q, size: 0.8, color: '#facc15', __type: 'earthquake' });
+            results.rings.push({ lat: q.lat, lng: q.lng, maxR: Math.max(q.mag * 3, 4), propagationSpeed: 2, repeatPeriod: 1000, color: 'rgba(245, 158, 11, 0.7)' });
+        });
 
-  // V9.1: Tıklama yakalamak için görünmez/yarı-saydam noktalar
-  const pointsData = useMemo(() => {
-    const topicCoords: Record<string, { lat: number; lng: number }> = {
-      military:      { lat: 35.0, lng: 39.0 },
-      cyber:         { lat: 39.9, lng: 116.4 },
-      nuclear:       { lat: 35.7, lng: 51.4 },
-      sanctions:     { lat: 55.7, lng: 37.6 },
-      intelligence:  { lat: 38.9, lng: -77.0 },
-      maritime:      { lat: 10.0, lng: 114.0 },
-    };
+        return results;
+    }, [newsEvents, threatAlerts, intelEvents, earthquakes]);
 
-    const topicColors: Record<string, string> = {
-      military: '#ef4444', cyber: '#a855f7', nuclear: '#f59e0b',
-      sanctions: '#3b82f6', intelligence: '#06b6d4', maritime: '#22d3ee',
-      terrorism: '#dc2626', geopolitics: '#fbbf24', conflict: '#f97316',
-      diplomacy: '#60a5fa'
-    };
+    const ringsData = syncData.rings;
+    const pointsData = syncData.points;
 
-    // 0. Intel Noktaları
-    const intelPoints = (intelEvents || []).map(i => {
-      const dbLat = (i as any).lat;
-      const dbLng = (i as any).lng;
-      const fallback = topicCoords[i.topicId];
-      const finalLat = dbLat !== undefined ? dbLat : fallback?.lat;
-      const finalLng = dbLng !== undefined ? dbLng : fallback?.lng;
-      
-      return {
-        ...i,
-        lat: finalLat, lng: finalLng,
-        size: 0.5, color: topicColors[i.topicId] || '#94a3b8', __type: 'intel'
-      };
-    }).filter((p: any) => p.lat != null && p.lng != null);
-
-    // 1. Tehdit Noktaları
-    const threatPoints = (threatAlerts || []).map(t => {
-      const dbLat = (t as any).lat;
-      const dbLng = (t as any).lng;
-      const coords = topicCoords[t.topicId];
-      const finalLat = dbLat !== undefined ? dbLat : (coords?.lat || 0);
-      const finalLng = dbLng !== undefined ? dbLng : (coords?.lng || 0);
-      return { ...t, lat: finalLat, lng: finalLng, size: 0.6, color: '#ef4444', __type: 'threat' };
-    }).filter(p => p.lat !== 0);
-
-    // 2. Deprem Noktaları
-    const quakePoints = (earthquakes || []).map(q => ({
-      ...q, size: 0.8, color: '#facc15', __type: 'earthquake'
-    }));
-
-    // 3. Haber Noktaları
-    const newsPoints = (newsEvents || []).map(n => ({
-      ...n, size: 0.5, color: '#ef4444', __type: 'news'
-    })).filter(p => p.lat != null && p.lng != null);
-
-    return [...intelPoints, ...threatPoints, ...quakePoints, ...newsPoints];
-  }, [threatAlerts, earthquakes, newsEvents, intelEvents]);
+    const pathsData = useMemo(() => {
+        return (satellites || []).filter(s => s.path && s.path.length > 0).map(s => ({
+            coords: s.path?.map(p => [p.lat, p.lng]),
+            color: 'rgba(255, 255, 255, 0.1)'
+        }));
+    }, [satellites]);
 
 
   return (
@@ -258,15 +242,13 @@ export default function GlobeMap() {
       <div style={{
         position: 'absolute', top: '20px', right: '26rem', zIndex: 100,
         background: 'rgba(15, 23, 42, 0.9)', backdropFilter: 'blur(12px)',
-        border: `1px solid ${aiStatus === 'ready' ? 'rgba(34, 197, 94, 0.5)' : aiStatus === 'processing' ? 'rgba(234, 179, 8, 0.5)' : aiStatus === 'error' ? 'rgba(239, 68, 68, 0.5)' : 'rgba(100, 116, 139, 0.3)'}`,
+        border: `1px solid ${aiStatus === 'ready' ? 'rgba(100, 116, 139, 0.5)' : aiStatus === 'processing' ? 'rgba(234, 179, 8, 0.5)' : aiStatus === 'error' ? 'rgba(239, 68, 68, 0.5)' : 'rgba(100, 116, 139, 0.3)'}`,
         borderRadius: '12px', padding: '10px 16px', font: 'bold 10px monospace', color: '#94a3b8'
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <div style={{
             width: '8px', height: '8px', borderRadius: '50%',
-            background: aiStatus === 'ready' ? '#22c55e' : aiStatus === 'processing' ? '#eab308' : aiStatus === 'loading' ? '#3b82f6' : aiStatus === 'error' ? '#ef4444' : '#475569',
-            boxShadow: aiStatus === 'ready' ? '0 0 8px #22c55e' : aiStatus === 'processing' ? '0 0 8px #eab308' : 'none',
-            animation: (aiStatus === 'loading' || aiStatus === 'processing') ? 'pulse 1.5s infinite' : 'none'
+            background: aiStatus === 'ready' ? '#475569' : aiStatus === 'processing' ? '#eab308' : aiStatus === 'loading' ? '#3b82f6' : aiStatus === 'error' ? '#ef4444' : '#475569'
           }} />
           <span style={{ color: '#e2e8f0', letterSpacing: '1px' }}>
             AI ENGINE: {aiStatus === 'ready' ? 'OPERATIONAL' : aiStatus === 'loading' ? 'LOADING MODEL...' : aiStatus === 'processing' ? 'ANALYZING...' : aiStatus === 'error' ? 'OFFLINE' : 'STANDBY'}
@@ -277,6 +259,17 @@ export default function GlobeMap() {
             ⚠ {threatAlerts.length} THREAT{threatAlerts.length > 1 ? 'S' : ''} DETECTED
           </div>
         )}
+      </div>
+      
+      {/* V11.0: Uydu Sayısı Bilgilendirmesi */}
+      <div style={{
+        position: 'absolute', top: '80px', right: '26rem', zIndex: 100,
+        background: 'rgba(15, 23, 42, 0.7)', backdropFilter: 'blur(8px)',
+        border: '1px solid rgba(56, 189, 248, 0.2)',
+        borderRadius: '8px', padding: '6px 12px', font: 'italic 9px monospace', color: '#64748b',
+        maxWidth: '200px', textAlign: 'right'
+      }}>
+        Sistemde 15.000+ aktif uydu bulunmaktadır. Performans için 200 tanesi senkronize edilmektedir.
       </div>
 
       <div style={{ position: 'absolute', top: '100px', left: '26rem', display: 'flex', flexDirection: 'column', gap: '16px', zIndex: 100, pointerEvents: 'none' }}>

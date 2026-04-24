@@ -44,7 +44,11 @@ class AISService {
   private connect() {
     if (this.socket) this.socket.close();
 
-    const wsUrl = `wss://shadownet-vwvw.onrender.com/api/ws/ais`;
+    const isProd = import.meta.env.PROD;
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = isProd 
+      ? `${protocol}//${window.location.host}/api/ws/ais`
+      : `ws://${window.location.hostname}:8080/api/ws/ais`;
 
     console.log(`[AIS] Connecting to ShadowNet AIS Relay: ${wsUrl}`);
     this.socket = new WebSocket(wsUrl);
@@ -77,22 +81,25 @@ class AISService {
   }
 
   private processAISMessage(msg: any) {
-    if (msg.MessageType === 'PositionReport') {
-      const { Message, MetaData } = msg;
-      if (!Message || !MetaData) return;
+      if (msg.MessageType === 'PositionReport') {
+        const { Message, MetaData } = msg;
+        if (!Message?.PositionReport || !MetaData) return;
 
-      const vessel: Vessel = {
-        id: `vessel-${MetaData.MMSI}`,
-        mmsi: MetaData.MMSI,
-        name: (MetaData.ShipName || '').trim() || `Vessel ${MetaData.MMSI}`,
-        lat: MetaData.latitude,
-        lng: MetaData.longitude,
-        speed: Message.PositionReport.Sog || 0,
-        course: Message.PositionReport.Cog || 0,
-        type: 'General', 
-        flag: (MetaData.Flag || 'Unknown'),
-        lastUpdate: Date.now()
-      };
+        const pos = Message.PositionReport;
+        const vessel: Vessel = {
+          id: `vessel-${MetaData.MMSI}`,
+          mmsi: MetaData.MMSI,
+          name: (MetaData.ShipName || '').trim() || `Vessel ${MetaData.MMSI}`,
+          lat: MetaData.latitude || pos.Latitude,
+          lng: MetaData.longitude || pos.Longitude,
+          speed: pos.Sog || 0,
+          course: pos.Cog || 0,
+          type: 'General', 
+          flag: (MetaData.Flag || 'Unknown'),
+          lastUpdate: Date.now()
+        };
+
+        if (isNaN(vessel.lat) || isNaN(vessel.lng)) return;
 
       // Update internal cache only, don't trigger store/react yet
       this.vesselCache.set(vessel.id, vessel);

@@ -4,38 +4,46 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import 'dotenv/config';
 import http from 'http';
+import https from 'https';
+import fs from 'fs';
 import { WebSocketServer, WebSocket } from 'ws';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 const app = express();
-const server = http.createServer(app);
 
-// --- Hybrid Support: CORS ---
-app.use(cors({
-  origin: '*', 
-  methods: ['GET', 'POST'],
-  credentials: true
-}));
+const sslOptions = {
+  key: fs.readFileSync('c:/nginx/ssl/redriverlab.me-key.pem'),
+  cert: fs.readFileSync('c:/nginx/ssl/redriverlab.me-crt.pem'),
+  ca: fs.readFileSync('c:/nginx/ssl/redriverlab.me-chain-only.pem')
+};
 
+const httpServer = http.createServer(app);
+const httpsServer = https.createServer(sslOptions, app);
+
+app.use(cors({ origin: '*', methods: ['GET', 'POST'], credentials: true }));
 app.use(express.json());
 
-// --- Diagnostic Middleware ---
+const labPath = join(__dirname, 'lab');
+const distPath = join(__dirname, 'dist');
+
 app.use((req, res, next) => {
-  console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+  const host = req.headers.host || '';
+  if (req.url.startsWith('/api')) return next();
+  if (host.startsWith('shadownet')) return express.static(distPath)(req, res, next);
+  if (host.includes('redriverlab.me')) return express.static(labPath)(req, res, next);
   next();
 });
 
 const caches = {
-  flights: { data: null, lastFetch: 0 },
+  flights: { data: { ac: [] }, lastFetch: 0 },
   satellites: { data: [], lastFetch: 0 },
   tor: { data: [], lastFetch: 0 },
   news: { data: [], lastFetch: 0 },
   intel: { data: { topics: [] }, lastFetch: 0 }
 };
 
-// --- Robust Fetch Utility ---
 async function fetchWithTimeout(url, options = {}, timeout = 15000) {
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), timeout);
@@ -49,238 +57,318 @@ async function fetchWithTimeout(url, options = {}, timeout = 15000) {
   }
 }
 
-let openskyToken = { value: '', expires: 0 };
-async function getOpenSkyToken() {
-  const now = Date.now();
-  if (openskyToken.value && openskyToken.expires > now + 60000) return openskyToken.value;
-  try {
-    const params = new URLSearchParams();
-    params.append('grant_type', 'client_credentials');
-    params.append('client_id', process.env.OPENSKY_CLIENT_ID || '');
-    params.append('client_secret', process.env.OPENSKY_CLIENT_SECRET || '');
-    const response = await fetchWithTimeout('https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: params
-    }, 10000);
-    if (response.ok) {
-      const data = await response.json();
-      openskyToken = { value: data.access_token, expires: now + (data.expires_in * 1000) };
-      return openskyToken.value;
-    }
-  } catch (e) {}
-  return null;
-}
+// --- Tactical Sync Functions ---
+const RELAY_WORKER_URL = 'https://shadow-relay.adakizilirmak00.workers.dev';
 
-// --- Background Data Collectors (Memory Optimized) ---
 async function syncFlights() {
-  const token = await getOpenSkyToken();
-  const report = [];
-
-  const providers = [
-    { name: 'OPENSKY', url: 'https://opensky-network.org/api/states/all', auth: true, timeout: 12000 },
-    { name: 'AIRPLANES.LIVE', url: 'https://api.airplanes.live/v2/all', timeout: 7000 },
-    { name: 'ADSB.LOL', url: 'https://api.adsb.lol/v2/all', timeout: 7000 },
-    { name: 'ADSB.ONE', url: 'https://api.adsb.one/v2/all', timeout: 7000 },
-    { name: 'ADSB.FI (CYPRUS)', url: 'https://opendata.adsb.fi/api/v3/lat/35/lon/33/dist/250', timeout: 5000 }
+  const auth = Buffer.from(`${process.env.OPENSKY_CLIENT_ID}:${process.env.OPENSKY_CLIENT_SECRET}`).toString('base64');
+  
+  // Ultra-Global Grid (12 Stratejik Bölge)
+  const regions = [
+    { name: 'NA_Central', lat: 45, lon: -100, dist: 1500 },
+    { name: 'SA_Brazil', lat: -15, lon: -50, dist: 1500 },
+    { name: 'Europe', lat: 50, lon: 10, dist: 1500 },
+    { name: 'Africa', lat: 0, lon: 20, dist: 1500 },
+    { name: 'Middle_East', lat: 35, lon: 45, dist: 1500 },
+    { name: 'East_Asia', lat: 35, lon: 115, dist: 1500 },
+    { name: 'SE_Asia', lat: -5, lon: 110, dist: 1500 },
+    { name: 'Australia', lat: -25, lon: 135, dist: 1500 },
+    { name: 'N_Atlantic', lat: 45, lon: -35, dist: 1500 },
+    { name: 'N_Pacific', lat: 35, lon: -160, dist: 1500 },
+    { name: 'Indian_Ocean', lat: -20, lon: 80, dist: 1500 },
+    { name: 'S_Atlantic', lat: -30, lon: -15, dist: 1500 }
   ];
 
-  for (const p of providers) {
-    try {
-      const headers = { 'User-Agent': 'Mozilla/5.0' };
-      if (p.auth && token) headers['Authorization'] = `Bearer ${token}`;
-      
-      const response = await fetchWithTimeout(p.url, { headers }, p.timeout);
-      if (response.ok) {
-        const rawData = await response.json();
-        // TheAirTraffic / Airplanes.live have same schema as ADSBExchange
-        caches.flights.data = { ...rawData, _source: p.name, _report: report };
-        caches.flights.lastFetch = Date.now();
-        console.log(`[Sync] Flights refreshed via ${p.name}`);
-        return true;
-      } else {
-        report.push({ name: p.name, status: `HTTP ${response.status}` });
-      }
-    } catch (e) {
-      report.push({ name: p.name, status: 'TIMEOUT/ERR' });
-    }
-  }
-  console.error(`[Sync] Flights failed: ${JSON.stringify(report)}`);
-  return false;
-}
+  let globalAircraft = [];
+  const icaoSeen = new Set();
 
-async function syncSatellites() {
-  const groups = ['starlink', 'gps-ops', 'stations', 'visual'];
-  let allSats = [];
-  for (const group of groups) {
+  // Paralel Chunker: Gruplar halinde çekerek hızı artırıyoruz
+  const fetchRegion = async (reg) => {
     try {
-      const response = await fetch(`https://celestrak.org/NORAD/elements/gp.php?GROUP=${group}&FORMAT=tle`);
-      if (response.ok) {
-        const text = await response.text();
-        const lines = text.trim().split('\n').map(l => l.trim());
-        for (let i = 0; i < lines.length - 2; i += 3) {
-          allSats.push({ name: lines[i], tle1: lines[i + 1], tle2: lines[i + 2], group });
+      const target = `https://api.adsb.lol/v2/lat/${reg.lat}/lon/${reg.lon}/dist/${reg.dist}`;
+      const relayUrl = `${RELAY_WORKER_URL}/?target=${encodeURIComponent(target)}`;
+      const res = await fetchWithTimeout(relayUrl, { headers: { 'User-Agent': 'ShadowNet-Ultra-Collector/3.0' } }, 15000);
+      if (res.ok) {
+        const data = await res.json();
+        return data.ac || data.aircraft || [];
+      }
+    } catch (e) { return []; }
+    return [];
+  };
+
+  // 3'lü gruplar halinde paralel çekim (Worker limitlerini aşmamak için)
+  for (let i = 0; i < regions.length; i += 3) {
+    const batch = regions.slice(i, i + 3);
+    const results = await Promise.all(batch.map(reg => fetchRegion(reg)));
+    
+    results.flat().forEach(ac => {
+      if (ac.hex && !icaoSeen.has(ac.hex)) {
+        icaoSeen.add(ac.hex);
+        globalAircraft.push(ac);
+      }
+    });
+    console.log(`[Relay] Batch ${i/3 + 1} completed. Total so far: ${globalAircraft.length}`);
+    await new Promise(r => setTimeout(r, 800)); // Rate-limit koruması
+  }
+
+  // OpenSky Çeyrek Taraması (Eksik kalan okyanus rotaları için)
+  const quadrants = [
+    { n: 90, s: 0, e: 180, w: 0 },    // NE
+    { n: 90, s: 0, e: 0, w: -180 }    // NW
+  ];
+
+  for (const q of quadrants) {
+    try {
+      const target = `https://opensky-network.org/api/states/all?lamin=${q.s}&lomin=${q.w}&lamax=${q.n}&lomax=${q.e}`;
+      const relayUrl = `${RELAY_WORKER_URL}/?target=${encodeURIComponent(target)}`;
+      const res = await fetchWithTimeout(relayUrl, {
+        headers: { 'Authorization': `Basic ${auth}`, 'User-Agent': 'ShadowNet-Sky-Scanner/3.0' }
+      }, 20000);
+      
+      if (res.ok) {
+        const data = await res.json();
+        if (data.states) {
+          data.states.forEach(s => {
+            const hex = s[0].toLowerCase();
+            if (!icaoSeen.has(hex)) {
+              icaoSeen.add(hex);
+              globalAircraft.push({ hex, lat: s[6], lon: s[5], alt: s[7], gs: s[9], track: s[10], r: s[1], _os: true });
+            }
+          });
         }
       }
-    } catch (e) {}
+    } catch (e) { }
   }
-  if (allSats.length > 0) {
-    caches.satellites.data = allSats;
-    caches.satellites.lastFetch = Date.now();
-    console.log(`[Sync] Satellites refreshed: ${allSats.length}`);
+
+  if (globalAircraft.length > 0) {
+    // Ultra-Limit: 15.000 uçak (Maksimum Yoğunluk)
+    caches.flights.data = { 
+      ac: globalAircraft.slice(0, 15000), 
+      _ts: Date.now(), 
+      _source: 'ULTRA_GLOBAL_GRID_MERGE',
+      _total_discovered: globalAircraft.length
+    };
+    console.log(`[Sync] Ultra-Global Success: ${globalAircraft.length} aircraft online`);
   }
 }
 
 async function syncIntel() {
-  const topics = [
-    { id: 'cyber', query: 'cyberattack OR hacking OR ransomware OR databreach' },
-    { id: 'military', query: 'military OR army OR navy OR airforce OR deployment' },
-    { id: 'nuclear', query: 'nuclear OR uranium OR radiation OR reactor' },
-    { id: 'maritime', query: 'maritime OR shipping OR naval OR "red sea" OR blockade' },
-    { id: 'conflict', query: 'war OR combat OR strike OR explosion OR invasion' },
-    { id: 'diplomacy', query: 'sanctions OR treaty OR summit OR embassy' }
+  const queries = [
+    'military+conflict+nuclear+war',
+    'cyber+attack+hacking+breach',
+    'space+weaponization+satellite+launch',
+    'intelligence+geopolitics+espionage',
+    'maritime+security+naval+conflict'
   ];
-
-  let intelData = { topics: [] };
-
-  for (const topic of topics) {
-    try {
-      const url = `https://api.gdeltproject.org/api/v2/doc/doc?query=${encodeURIComponent(topic.query)}&mode=artlist&maxrecords=20&format=json&sort=date`;
-      const response = await fetchWithTimeout(url, {}, 10000);
+  
+  try {
+    let allArticles = [];
+    for (const query of queries) {
+      const url = `https://news.google.com/rss/search?q=${query}&hl=en-US&gl=US&ceid=US:en`;
+      const response = await fetchWithTimeout(url, {}, 15000);
       if (response.ok) {
-        const data = await response.json();
-        intelData.topics.push({ id: topic.id, articles: data.articles || [] });
+        const xml = await response.text();
+        const items = xml.match(/<item>([\s\S]*?)<\/item>/g) || [];
+        allArticles.push(...items.slice(0, 40));
       }
-    } catch (e) {
-      console.error(`[Sync] Intel ${topic.id} failed/timeout`);
+      await new Promise(r => setTimeout(r, 200));
     }
-    // Rate limit safeguard
+
+    const articles = allArticles.map((item, i) => {
+      const title = (item.match(/<title>([\s\S]*?)<\/title>/)?.[1] || 'Tactical Update').replace('<![CDATA[', '').replace(']]>', '');
+      const link = item.match(/<link>([\s\S]*?)<\/link>/)?.[1] || '#';
+      const pubDate = item.match(/<pubDate>([\s\S]*?)<\/pubDate>/)?.[1] || new Date().toISOString();
+      const source = item.match(/<source[^>]*>([\s\S]*?)<\/source>/)?.[1] || 'Google News';
+      
+      let topicId = 'geopolitics';
+      const lowerTitle = title.toLowerCase();
+      if (lowerTitle.includes('cyber') || lowerTitle.includes('hacking')) topicId = 'cyber';
+      if (lowerTitle.includes('nuclear') || lowerTitle.includes('atomic')) topicId = 'nuclear';
+      if (lowerTitle.includes('military') || lowerTitle.includes('naval') || lowerTitle.includes('war')) topicId = 'military';
+      if (lowerTitle.includes('space') || lowerTitle.includes('satellite')) topicId = 'space';
+      
+      return { id: `intel-${i}`, title, url: link, timestamp: pubDate, source, topicId, latitude: (Math.random() * 140 - 70), longitude: (Math.random() * 300 - 150) };
+    });
+
+    const topics = ['military', 'cyber', 'nuclear', 'space', 'geopolitics'].map(id => ({
+      id, articles: articles.filter(a => a.topicId === id).slice(0, 50)
+    })).filter(t => t.articles.length > 0);
+
+    caches.news.data = articles.slice(0, 300);
+    caches.intel.data = { topics };
+    console.log(`[Sync] Rich Intel: ${articles.length} tactical units`);
+  } catch (e) { console.error('[Sync] Intel Failed'); }
+}
+
+async function syncNews() {
+  try {
+    const url = 'https://news.google.com/rss/search?q=world+news+breaking+conflict+intelligence&hl=en-US&gl=US&ceid=US:en';
+    const response = await fetchWithTimeout(url, {}, 15000);
+    if (response.ok) {
+      const xml = await response.text();
+      const items = xml.match(/<item>([\s\S]*?)<\/item>/g) || [];
+      const news = items.map((item, i) => ({
+        title: (item.match(/<title>([\s\S]*?)<\/title>/)?.[1] || '').replace('<![CDATA[', '').replace(']]>', ''),
+        url: item.match(/<link>([\s\S]*?)<\/link>/)?.[1] || '#',
+        source: item.match(/<source[^>]*>([\s\S]*?)<\/source>/)?.[1] || 'Global News'
+      }));
+      // Merge with tactical intel if available
+      caches.news.data = [...(caches.news.data || []), ...news].slice(0, 500);
+      console.log(`[Sync] Global News: ${news.length}`);
+    }
+  } catch (e) { console.error('[Sync] News Failed'); }
+}
+
+async function syncSatellites() {
+  const groups = ['visual', 'starlink', 'weather', 'noaa', 'active'];
+  let allSats = [];
+
+  for (const group of groups) {
+    try {
+      const target = `https://celestrak.org/NORAD/elements/gp.php?GROUP=${group}&FORMAT=tle`;
+      const relayUrl = `${RELAY_WORKER_URL}/?target=${encodeURIComponent(target)}`;
+      const res = await fetchWithTimeout(relayUrl, {}, 15000);
+      
+      if (res.ok) {
+        const text = await res.text();
+        const lines = text.split(/\r?\n/);
+        for (let i = 0; i < lines.length - 2; i += 3) {
+          if (lines[i+1]?.startsWith('1 ') && lines[i+2]?.startsWith('2 ')) {
+            allSats.push({ name: lines[i].trim(), tle1: lines[i+1], tle2: lines[i+2] });
+          }
+        }
+        console.log(`[Relay] Group ${group} synced: ${allSats.length} total`);
+        if (allSats.length >= 500) break; // Limit reached
+      }
+    } catch (e) { }
     await new Promise(r => setTimeout(r, 500));
   }
 
-  if (intelData.topics.length > 0) {
-    caches.intel.data = intelData;
-    caches.intel.lastFetch = Date.now();
-    console.log(`[Sync] Categorized Intel refreshed`);
+  if (allSats.length > 0) {
+    caches.satellites.data = allSats.slice(0, 500);
+    console.log(`[Sync] Orbital Grid: ${caches.satellites.data.length} satellites online`);
+  } else {
+    // Ultimate Fallback
+    caches.satellites.data = (caches.satellites.data || []).slice(0, 500);
   }
 }
 
 async function syncExtra() {
-  // Tor Onionoo
   try {
-    const res = await fetchWithTimeout('https://onionoo.torproject.org/details?type=relay&running=true&limit=20', {}, 10000);
+    const res = await fetchWithTimeout('https://onionoo.torproject.org/details?limit=200', {}, 15000);
     if (res.ok) {
       const data = await res.json();
-      const relays = (data.relays || []).filter(r => r.latitude && r.longitude);
-      caches.tor.data = relays;
-      if (relays.length > 0) console.log(`[Sync] Tor Nodes refreshed: ${relays.length}`);
+      caches.tor.data = (data.relays || []).map(r => ({
+        ...r, latitude: r.latitude || (Math.random() * 140 - 70), longitude: r.longitude || (Math.random() * 300 - 150)
+      }));
+      console.log(`[Sync] Tor Nodes: ${caches.tor.data.length}`);
     }
-  } catch (e) { console.error('[Sync] Tor failed/timeout'); }
-
-  // Global News (NYT)
-  try {
-    const res = await fetchWithTimeout('https://api.rss2json.com/v1/api.json?rss_url=https://rss.nytimes.com/services/xml/rss/nyt/World.xml', {}, 10000);
-    if (res.ok) {
-      const data = await res.json();
-      caches.news.data = (data.items || []).map(item => ({ title: item.title, url: item.link }));
-      console.log(`[Sync] World News refreshed`);
-    }
-  } catch (e) { console.error('[Sync] News failed/timeout'); }
+  } catch (e) { }
 }
 
-// Initial Sync & Loops (Parallel Initial Load)
-setInterval(syncFlights, 120000);
-setInterval(syncSatellites, 3600000);
-setInterval(syncIntel, 900000);
+async function syncOTX() {
+  try {
+    const res = await fetchWithTimeout('https://otx.alienvault.com/api/v1/pulses/subscribed?limit=10', {
+      headers: { 'X-OTX-API-KEY': process.env.OTX_API_KEY }
+    }, 12000);
+    if (res.ok) {
+      const data = await res.json();
+      caches.news.data = [...(caches.news.data || []), ...(data.results || []).map(p => ({ title: `[OTX] ${p.name}`, url: `https://otx.alienvault.com/pulse/${p.id}`, source: 'AlienVault' }))].slice(0, 100);
+      console.log(`[Sync] OTX Pulses: ${data.results?.length || 0}`);
+    }
+  } catch (e) { }
+}
+
+async function syncRadar() {
+  try {
+    const res = await fetchWithTimeout('https://api.cloudflare.com/client/v4/radar/ranking/top?limit=10', {
+      headers: { 'Authorization': `Bearer ${process.env.CF_API_TOKEN}` }
+    }, 12000);
+    if (res.ok) {
+      const data = await res.json();
+      caches.tor.data = [...(caches.tor.data || []), ...(data.result?.top_0 || []).map(r => ({ nickname: `ASN-${r.asn}`, country: 'BGP_ANOMALY', latitude: 0, longitude: 0 }))].slice(0, 300);
+      console.log('[Sync] CF Radar Integrated');
+    }
+  } catch (e) { }
+}
+
+setInterval(syncFlights, 60000);
+setInterval(syncSatellites, 300000);
+setInterval(syncIntel, 600000);
 setInterval(syncExtra, 600000);
+setInterval(syncNews, 600000);
+setInterval(syncOTX, 900000);
+setInterval(syncRadar, 900000);
 
-// Parallelizing initial loads so one slow fetch doesn't block others
-setTimeout(syncFlights, 500);
-setTimeout(syncSatellites, 1000);
-setTimeout(syncIntel, 1500);
-setTimeout(syncExtra, 2000);
+setTimeout(syncFlights, 1000);
+setTimeout(syncSatellites, 3000);
+setTimeout(syncIntel, 5000);
+setTimeout(syncExtra, 7000);
+setTimeout(syncNews, 8000);
+setTimeout(syncOTX, 10000);
+setTimeout(syncRadar, 12000);
 
-// --- API Endpoints ---
-app.get('/api/status', (req, res) => {
-  res.json({ status: 'online', uptime: process.uptime(), providers: ['OPENSKY', 'ADSB.LOL', 'ADSB.FI'] });
-});
+app.get('/api/data/flights', (req, res) => res.json(caches.flights.data));
+app.get('/api/data/satellites', (req, res) => res.json(caches.satellites.data));
+app.get('/api/data/intel', (req, res) => res.json(caches.intel.data));
+app.get('/api/data/tor', (req, res) => res.json(caches.tor.data));
+app.get('/api/data/news', (req, res) => res.json(caches.news.data));
+app.get('/api/data/otx', (req, res) => res.json({ results: caches.news.data.filter(n => n.source === 'AlienVault') }));
+app.get('/api/data/radar', (req, res) => res.json({ result: { top_0: caches.tor.data.filter(t => t.country === 'BGP_ANOMALY') } }));
 
-app.get(['/api/data/flights', '/api/flights'], (req, res) => {
-  res.json(caches.flights.data || { ac: [], _loading: true });
-});
-
-app.get(['/api/data/satellites', '/api/satellites'], (req, res) => res.json(caches.satellites.data));
-app.get(['/api/data/intel', '/api/intel'], (req, res) => res.json(caches.intel.data));
-app.get(['/api/data/tor', '/api/tor', '/api/nodes'], (req, res) => res.json(caches.tor.data));
-app.get(['/api/data/news', '/api/news'], (req, res) => res.json(caches.news.data));
-
-app.get('/api/data/otx', async (req, res) => {
-  try {
-    const response = await fetch('https://otx.alienvault.com/api/v1/pulses/subscribed?limit=10', {
-      headers: { 'X-OTX-API-KEY': process.env.OTX_API_KEY || '' }
-    });
-    const data = await response.json();
-    res.json(data);
-  } catch (e) { res.status(500).json({ error: 'OTX failure' }); }
-});
-
-app.get('/api/data/radar', async (req, res) => {
-  try {
-    const response = await fetch('https://api.cloudflare.com/client/v4/radar/ranking/asn?limit=5', {
-      headers: { 'Authorization': `Bearer ${process.env.CF_API_TOKEN || ''}` }
-    });
-    const data = await response.json();
-    res.json(data);
-  } catch (e) { res.status(500).json({ error: 'Radar failure' }); }
-});
-
-// --- AIS WebSocket Relay ---
 const AIS = { upstream: null, clients: new Set() };
 const connectUpstream = () => {
-  if (AIS.upstream && AIS.upstream.readyState === 1) return;
-  try {
-    const upstream = new WebSocket('wss://stream.aisstream.io/v0/stream');
-    upstream.on('open', () => {
-      AIS.upstream = upstream;
-      upstream.send(JSON.stringify({ 
-        APIKey: process.env.AIS_STREAM_API_KEY || '', 
-        BoundingBoxes: [[[90, -180], [-90, 180]]],
-        FilterMessageTypes: ["PositionReport"]
-      }));
-    });
-    upstream.on('message', (msg) => {
-      const str = msg.toString();
-      AIS.clients.forEach(c => { if (c.readyState === 1) c.send(str); });
-    });
-    upstream.on('close', () => { AIS.upstream = null; setTimeout(connectUpstream, 10000); });
-    
-    const hb = setInterval(() => {
-      if (upstream.readyState === 1) upstream.send(JSON.stringify({ type: 'ping' }));
-    }, 30000);
-    upstream.on('close', () => clearInterval(hb));
-
-  } catch (e) { setTimeout(connectUpstream, 10000); }
+  if (AIS.upstream?.readyState === 1) return;
+  const upstream = new WebSocket('wss://stream.aisstream.io/v0/stream', {
+    rejectUnauthorized: false
+  });
+  upstream.on('open', () => {
+    AIS.upstream = upstream;
+    console.log('[AIS] Connected, subscribing...');
+    setTimeout(() => {
+      if (upstream.readyState === 1) {
+        upstream.send(JSON.stringify({
+          APIKey: process.env.AIS_STREAM_API_KEY,
+          BoundingBoxes: [[[-90, -180], [90, 180]]],
+          FilterMessageTypes: ["PositionReport"]
+        }));
+      }
+    }, 2000);
+  });
+  let msgCount = 0;
+  upstream.on('message', (msg) => {
+    msgCount++;
+    if (msgCount % 100 === 0) console.log(`[AIS] Received ${msgCount} messages`);
+    const str = msg.toString();
+    AIS.clients.forEach(c => { if (c.readyState === 1) c.send(str); });
+  });
+  upstream.on('error', (err) => console.error('[AIS] Stream Error:', err.message));
+  upstream.on('close', (code, reason) => {
+    console.warn(`[AIS] Stream Closed. Code: ${code}, Reason: ${reason}`);
+    setTimeout(connectUpstream, 10000);
+  });
 };
 
 const wss = new WebSocketServer({ noServer: true });
-server.on('upgrade', (req, socket, head) => {
+const upgradeHandler = (req, socket, head) => {
   if (req.url.startsWith('/api/ws/ais')) {
     wss.handleUpgrade(req, socket, head, (ws) => {
       AIS.clients.add(ws);
       ws.on('close', () => AIS.clients.delete(ws));
       connectUpstream();
     });
-  } else {
-    socket.destroy();
-  }
-});
-connectUpstream();
+  } else { socket.destroy(); }
+};
 
-app.get('/', (req, res) => {
-  res.send('ShadowNet Data Center Online. Point Vercel here.');
+httpServer.on('upgrade', upgradeHandler);
+httpsServer.on('upgrade', upgradeHandler);
+
+app.use((req, res, next) => {
+  const host = req.headers.host || '';
+  if (req.url.startsWith('/api')) return next();
+  const file = host.startsWith('shadownet') ? join(distPath, 'index.html') : join(labPath, 'index.html');
+  res.sendFile(file);
 });
 
-const PORT = process.env.PORT || 8080;
-server.listen(PORT, () => {
-  console.log(`[ShadowNet Data Center] Active on port ${PORT}`);
-});
+httpServer.listen(process.env.PORT || 80, '0.0.0.0');
+httpsServer.listen(443, '0.0.0.0', () => console.log('System FINAL NOMINAL'));

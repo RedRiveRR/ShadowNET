@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>REDRIVERR LAB // MEGA STATION</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@300;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css?v=9">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <canvas id="lab-canvas"></canvas>
+    <div class="grid-overlay"></div>
+
+    <div class="container">
+        <header>
+            <div class="logo-container">
+                <div class="logo-circle">
+                    <i class="fas fa-laptop-code"></i>
+                </div>
+                <div class="status-badge">
+                    <span class="pulse-dot"></span>
+                    System Online
+                </div>
+            </div>
+            <h1>RedRiveRR Lab</h1>
+            <p class="tagline">Hardened Singleton Proxy // System Nominal</p>
+        </header>
+
+        <nav class="social-links">
+            <a href="https://github.com/RedRiveRR" target="_blank" class="glass-card">
+                <i class="fab fa-github"></i>
+                <span>GITHUB</span>
+            </a>
+            <a href="https://www.linkedin.com/in/mert-kızılırmak-5aa76b227/" target="_blank" class="glass-card">
+                <i class="fab fa-linkedin"></i>
+                <span>LINKEDIN</span>
+            </a>
+            <a href="#" class="glass-card" onclick="alert('Discord: redriver')">
+                <i class="fab fa-discord"></i>
+                <span>DISCORD</span>
+            </a>
+        </nav>
+
+        <section class="stats-bar">
+            <div class="stat-item">
+                <span class="stat-label">ENTITIES TRACKED</span>
+                <span class="stat-value" id="stat-entities">1,402</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">LOGIC NODES</span>
+                <span class="stat-value">64</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">SYSTEM UPTIME</span>
+                <span class="stat-value" id="stat-uptime">99.98%</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">LAB STATUS</span>
+                <span class="stat-value" style="color: #22c55e;">OPTIMAL</span>
+            </div>
+        </section>
+
+        <section class="projects">
+            <h2 class="section-title">ACTIVE PROJECTS</h2>
+            <div class="project-grid">
+                <div class="project-card glass-card" onclick="window.open('http://shadownet.redriverlab.me', '_blank')">
+                    <div class="project-icon"><i class="fas fa-satellite-dish"></i></div>
+                    <h3>SHADOWNET</h3>
+                    <p>Global Intelligence & Tactical Visualization Platform.</p>
+                    <div class="project-status">DEPLOYED // LIVE</div>
+                </div>
+            </div>
+        </section>
+
+        <section class="tech-stack">
+            <h2 class="section-title">LABORATORY EQUIPMENT</h2>
+            <div class="tech-grid">
+                <div class="tech-item" title="React"><i class="fab fa-react"></i></div>
+                <div class="tech-item" title="TypeScript"><i class="fas fa-code"></i></div>
+                <div class="tech-item" title="Node.js"><i class="fab fa-node-js"></i></div>
+                <div class="tech-item" title="Python"><i class="fab fa-python"></i></div>
+                <div class="tech-item" title="Docker"><i class="fab fa-docker"></i></div>
+                <div class="tech-item" title="Cloud Ops"><i class="fas fa-cloud"></i></div>
+            </div>
+        </section>
+
+        <footer>
+            <div class="footer-line"></div>
+            <p>&copy; 2026 REDRIVERR LAB. ALL RIGHTS RESERVED. // V.1.0.4-BETA</p>
+        </footer>
+    </div>
+
+    <!-- INTERACTIVE TERMINAL -->
+    <div class="terminal-window glass-card" id="terminal-window">
+        <div class="terminal-header">
+            <span class="terminal-dot red" id="close-terminal"></span>
+            <span class="terminal-dot yellow"></span>
+            <span class="terminal-dot green"></span>
+            <span class="terminal-title">REDRIVERR_OS // CMD.EXE</span>
+            <i class="fas fa-times close-icon" id="close-terminal-btn"></i>
+        </div>
+        <div class="terminal-body" id="terminal-body">
+            <div class="log-entry">> REDRIVERR LAB OS [Version 1.0.4]</div>
+            <div class="log-entry">> Type 'help' to see available commands.</div>
+        </div>
+        <form class="terminal-input-area" id="terminal-form">
+            <span class="prompt">></span>
+            <input type="text" id="terminal-input" placeholder="Enter command..." autocomplete="off">
+        </form>
+    </div>
+
+    <!-- TERMINAL TOGGLE BUTTON -->
+    <button class="terminal-toggle-btn glass-card" id="open-terminal">
+        <i class="fas fa-terminal"></i>
+        <span>CMD</span>
+    </button>
+
+    <script src="script.js?v=9"></script>
+</body>
+</html>
