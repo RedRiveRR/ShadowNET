@@ -1,62 +1,62 @@
-# 🌐 ShadowNET V12.0 — Ultra-Global Recon & Tactical Intelligence
+# 🌐 ShadowNET V12.0 — Küresel Havacılık, Denizcilik ve Taktiksel İstihbarat Terminali
 
-ShadowNET is a high-fidelity situational awareness terminal designed to monitor global security anomalies, geopolitical conflicts, and strategic assets in real-time.
+ShadowNET; küresel güvenlik anomalilerini, jeopolitik çatışmaları ve stratejik varlıkları gerçek zamanlı olarak izleyen yüksek hassasiyetli bir durumsal farkındalık terminalidir.
 
-V12.0 marks the transition to an **Ultra-Global Grid Architecture**, utilizing a Cloudflare Worker Relay to bypass systemic network restrictions and deliver unprecedented data density.
-
----
-
-## 🚀 Key Features in V12.0
-
-### ✈️ Ultra-Global Aviation Tracking
-- **12-Region Grid Chunker:** High-intensity scanning across 12 strategic global hubs (NA, EU, Asia, ME, etc.).
-- **11,000+ Active Aircraft:** Real-time global flight telemetry with 15,000 unit capacity.
-- **DPI/WAF Bypass:** Tunneled through a Cloudflare Worker Relay to reset JA3 fingerprints and bypass Azure IP blocks.
-
-### ⚓ Real-Time Maritime Recon
-- **Global AIS Stream:** Live ship tracking powered by AISStream.io.
-- **7,000+ Msg/Sync:** High-throughput maritime telemetry processing.
-- **Bounding Box Logic:** Worldwide coverage from pole to pole.
-
-### 🛰️ Orbital Surveillance
-- **Celestrak & AMSAT Hybrid:** Real-time satellite tracking for 500+ strategic orbital assets.
-- **Bypass Mode:** Relayed orbital data to ensure 24/7 uptime even during provider blocks.
-
-### 🧠 Tactical Intelligence Engine
-- **Rich Power Feed:** Merged stream of 300+ tactical news nodes (Military, Cyber, Nuclear, Space).
-- **Categorized Intel:** Advanced NLP classification for geopolitical events.
-- **Tor Infrastructure:** Real-time status monitoring for 200+ global Tor relays.
+V12.0 sürümü ile ShadowNET, **Ultra-Global Izgara Mimarisi**'ne geçiş yaparak, Cloudflare Worker Relay katmanı üzerinden sistem kısıtlamalarını aşmış ve eşsiz bir veri yoğunluğuna ulaşmıştır.
 
 ---
 
-## 🛠️ Technical Architecture
+## 🚀 V12.0 Öne Çıkan Özellikler
 
-1.  **Cloudflare Worker Relay:** Edge-based proxy layer to sanitize requests and handle high-volume data chunking.
-2.  **Multi-Region Merging:** Backend logic that deduplicates and merges regional telemetry into a unified global state.
-3.  **Hybrid Visualizer:** React + Globe.gl + Canvas rendering engine optimized for 15,000+ dynamic entities.
+### ✈️ Ultra-Global Havacılık Takibi
+- **12-Bölge Izgara Sistemi:** Kuzey Amerika, Avrupa, Asya, Ortadoğu ve Okyanus rotaları dahil 12 stratejik merkezde eş zamanlı tarama.
+- **11.000+ Aktif Hava Aracı:** 15.000 uçak kapasiteli gerçek zamanlı küresel telemetri.
+- **WAF & DPI Bypass:** Azure IP bloklarını ve JA3 parmak izi kısıtlamalarını aşmak için Cloudflare Worker Relay üzerinden tünellenmiş veri akışı.
+
+### ⚓ Gerçek Zamanlı Denizcilik Keşfi
+- **Küresel AIS Akışı:** AISStream.io üzerinden sağlanan canlı gemi takip verileri.
+- **7.000+ Mesaj/Senkronizasyon:** Yüksek hacimli denizcilik telemetri işleme kapasitesi.
+- **Tam Kapsama:** Kutuptan kutuba tüm dünya deniz trafiği.
+
+### 🛰️ Yörünge Gözlemi (Orbital Surveillance)
+- **Celestrak & AMSAT Hibrit:** 500'den fazla stratejik uydu varlığı için gerçek zamanlı takip.
+- **Kesintisiz Erişim:** Servis sağlayıcı kısıtlamalarına karşı yedekli ve tünellenmiş yörünge verisi.
+
+### 🧠 Taktiksel İstihbarat Motoru
+- **Gelişmiş Haber Akışı:** 300+ taktiksel haber düğümü (Askeri, Siber, Nükleer, Uzay).
+- **Otomatik Kategorizasyon:** Jeopolitik olaylar için gelişmiş NLP sınıflandırması.
+- **Tor Altyapısı:** 200'den fazla küresel Tor relay düğümünün gerçek zamanlı durum izlemesi.
 
 ---
 
-## 🖥️ Getting Started
+## 🛠️ Teknik Mimari
+
+1.  **Cloudflare Worker Relay:** İstekleri sanitize eden ve yüksek hacimli veri paketlerini yöneten uç nokta (Edge) proxy katmanı.
+2.  **Çoklu Bölge Birleştirme (Multi-Region Merge):** Bölgesel telemetri verilerini tekilleştiren (deduplication) ve global bir duruma dönüştüren backend mantığı.
+3.  **Hibrit Görselleştirici:** 15.000+ dinamik varlık için optimize edilmiş React + Globe.gl + Canvas tabanlı görselleştirme motoru.
+
+---
+
+## 🖥️ Kurulum ve Başlatma
 
 ```bash
-# Install dependencies
+# Bağımlılıkları yükle
 npm install
 
-# Start the Shadow Engine
+# Shadow Engine'ı başlat
 node server.js
 ```
 
 ---
 
-## 🔐 Security & Privacy
+## 🔐 Güvenlik ve Gizlilik
 
-- **Protected Origin:** Server IP and internal manifests are protected via `.gitignore` and Cloudflare masking.
-- **Zero External Analytics:** All intelligence analysis is performed locally; your reconnaissance data remains yours.
+- **Gizlenmiş Kaynak:** Sunucu IP adresleri ve dahili manifestolar `.gitignore` ve Cloudflare maskeleme ile korunmaktadır.
+- **Yerel Analiz:** Tüm istihbarat analizi yerel olarak gerçekleştirilir; verileriniz sunucu dışına çıkmaz.
 
 ---
 
 > [!NOTE]
-> **V12 Performance**: This version is designed for high-density displays. For optimal performance, ensure your hardware supports WebGL acceleration.
+> **V12 Performansı**: Bu sürüm yüksek yoğunluklu veri ekranları için tasarlanmıştır. En iyi deneyim için donanımınızın WebGL hızlandırmasını desteklediğinden emin olun.
 
-**ShadowNET V12.0** — *Global Presence, Tactical Superiority.*
+**ShadowNET V12.0** — *Küresel Varlık, Taktiksel Üstünlük.*

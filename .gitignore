@@ -10,7 +10,9 @@ lerna-debug.log*
 node_modules
 dist
 .env
-lab/purpose.txt
+lab/
+win-acme/
+scratch/
 dist-ssr
 *.local
 
